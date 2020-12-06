@@ -2,6 +2,16 @@
 
 > This is the group project for ANM2020.
 
+## Guide
+
+### Scripts
+- consumer.py --- script to submit our answers
+- concat.py --- script to make a single file for all data
+
+### Main program
+- main.py --- main python file that we can use for our submission
+- main.ipynb --- notebook to finish different parts of the task efficiently
+
 ## Problem statement
 
 > Root cause an anomaly for a microservice-based software system.
@@ -65,4 +75,3 @@
    | :-----: | :------: | :-----: | :----------: | :----: | :-----: |
    |  1111   | CPU_free |  ZJ02   | 163249574938 | 420.69 | db_008  |
 
-   
