@@ -23,8 +23,9 @@ class MicroRCA():
         data['serviceName'] = data['serviceName'].mask(pd.isnull, data['dsName'])
         # self.data['host_service'] = self.data['cmdb_id'] +':'+ self.data['serviceName']
 
-        data['callType'] = pd.Categorical(data['callType'], ["OSB", "CSF", "LOCAL", "FlyRemote", "RemoteProcess", "JDBC"])
-        data = data.sort_values(["traceId","startTime"], ignore_index=True)
+        # data['callType'] = pd.Categorical(data['callType'], ["OSB", "CSF", "LOCAL", "FlyRemote", "RemoteProcess", "JDBC"])
+        # data = data.sort_values(["traceId","startTime"], ignore_index=True)
+        data = data.sort_values(["startTime"], ignore_index=True)
 
         # Get the child's id and elapse time
         elapse_time = {}
