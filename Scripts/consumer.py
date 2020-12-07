@@ -269,15 +269,17 @@ def main():
     # Check authorities
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
+    print('Start Running')
+
     # submit([['docker_003', 'container_cpu_used']])
     esb_df = pd.DataFrame(columns = ['serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
     host_df = pd.DataFrame(columns = ['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
     trace_df = pd.DataFrame(columns = ['callType', 'startTime', 'elapsedTime', 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
     
 
-    i = 0
+    # i = 0
     for message in CONSUMER:
-        i += 1
+        # i += 1
         data = json.loads(message.value.decode('utf8'))
         if message.topic == 'platform-index':
             # # data['body'].keys() is supposed to be
@@ -293,7 +295,7 @@ def main():
             # timestamp = data['timestamp']
 
             for stack in data['body']:
-                if stack == 'os_linux' or stack == 'dcos_docker'
+                if stack == 'os_linux' or stack == 'dcos_docker':
                     for item in data['body'][stack]:
                         host_df = host_df.append(item, ignore_index=True)
                         # print('host: ', item)
