@@ -5,12 +5,18 @@
 ## Guide
 
 ### Running Scripts in Tencent Cloud
-Make sure python scipt has 
-    #!/usr/bin/env python3
-Give it permission
-    chmod +x main.py
-Run it using:
-    nohup /path/to/main.py > output.log &
+- Make sure python scipt has the following at the beginning
+   '''
+   #!/usr/bin/env python3
+   '''
+- Give it permission
+   '''
+   chmod +x main.py
+   '''
+- Run it using:
+   '''
+   nohup /path/to/main.py > output.log &
+   '''
 
 ### To end the process
     ps ax | grep test.py
