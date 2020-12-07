@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+
 '''
 Example for data consuming.
 '''
@@ -7,6 +10,12 @@ import json
 from kafka import KafkaConsumer
 
 import pandas as pd
+import numpy as np
+import time
+import networkx as nx
+from sklearn.cluster import Birch
+from sklearn import preprocessing
+import numpy as np
 
 
 # Three topics are available: platform-index, business-index, trace.
