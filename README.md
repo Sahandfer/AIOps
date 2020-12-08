@@ -15,12 +15,19 @@
    ```
 - Run it using:
    ```
-   nohup python -u ./consumer.py > output.log &
+   nohup python -u ./consumer.py > [output file name].log &
+   ```
+
+### Viewing the output
+   ```
+   cat [output file name].log
    ```
 
 ### To end the process
-    ps ax | grep consumer.py
-    kill PID
+   ```
+   ps ax | grep consumer.py
+   kill PID
+   ```
 
 ### Scripts
 - consumer.py --- script to submit our answers
