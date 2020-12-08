@@ -11,15 +11,15 @@
    ```
 - Give it permission
    ```
-   chmod +x main.py
+   chmod +x consumer.py
    ```
 - Run it using:
    ```
-   nohup /path/to/main.py > output.log &
+   nohup python -u ./consumer.py > output.log &
    ```
 
 ### To end the process
-    ps ax | grep test.py
+    ps ax | grep consumer.py
     kill PID
 
 ### Scripts
