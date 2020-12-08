@@ -11,7 +11,7 @@
    ```
 - Give it permission
    ```
-   chmod +x main.py
+   chmod +x consumer.py
    ```
 - Run it using:
    ```
