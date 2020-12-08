@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# -*- coding: utf-8 -*-
 
 '''
 Example for data consuming.
@@ -9,13 +9,13 @@ import json
 
 from kafka import KafkaConsumer
 
+import time
 import pandas as pd
 import numpy as np
-import time
 import networkx as nx
 from sklearn.cluster import Birch
+from sklearn.neighbors import KernelDensity
 from sklearn import preprocessing
-import numpy as np
 
 
 # Three topics are available: platform-index, business-index, trace.
@@ -28,7 +28,7 @@ CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
                          security_protocol='PLAINTEXT')
 
 class MicroRCA():
-    def __init__(self, data, metric_step='5s', smoothing_window=12, threshold=0.03):
+    def __init__(self, data, metric_step='5s', smoothing_window=12, threshold=0.05):
         self.data = data
         self.metric_step = metric_step
         self.smoothing_window = smoothing_window
@@ -37,8 +37,8 @@ class MicroRCA():
     def data_processing(self):
         print("Starting data processing...")
 
-        self.data['serviceName'] = self.data['serviceName'].mask(
-            pd.isnull, self.data['dsName'])
+        # self.data['serviceName'] = self.data['serviceName'].mask(
+        #     pd.isnull, self.data['dsName'])
         # self.data['host_service'] = self.data['cmdb_id'] +':'+ self.data['serviceName']
 
         # data['callType'] = pd.Categorical(data['callType'], ["OSB", "CSF", "LOCAL", "FlyRemote", "RemoteProcess", "JDBC"])
@@ -345,13 +345,13 @@ def main():
             #     print('trace: ', data)
         # print(i, message.topic, timestamp)
 
-def detection(timestamp, trace_df, host_df):
+def detection(timestamp, trace, host):
     print('Starting Anomay Detection')
-    startTime = timestamp - 600000
-    trace_df = trace_df[(trace_df['startTime']>=startTime)&(trace_df['startTime']<=timestamp)]
-    host_df = host_df[(host_df['timestamp']>=startTime)&(host_df['timestamp']<=timestamp)]
+    startTime = timestamp - 300000
+    t_df = trace[(trace['startTime']>=startTime)&(trace['startTime']<=timestamp)]
+    h_df = host[(host['timestamp']>=startTime)&(host['timestamp']<=timestamp)]
 
-    RCA = MicroRCA(trace_df, smoothing_window=3, threshold=0.03)
+    RCA = MicroRCA(t_df, smoothing_window=3, threshold=0.03)
     RCA.data_processing()
     anom_hosts = RCA.anomaly_detection()
 
@@ -364,7 +364,7 @@ def detection(timestamp, trace_df, host_df):
         if (item not in anoms):
             anoms.append(item)
     
-    root_causes = RCA.find_root_causes(host_df, anoms)
+    root_causes = RCA.find_root_causes(h_df, anoms)
     print('Anomaly Detection Done.')
 
     if len(root_causes)==1:
