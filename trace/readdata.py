@@ -3,7 +3,7 @@ import random
 import json
 
 
-def read_raw_vector(input_json, vc=None, shuffle=True, sample=False):  # flows, vectors, valid_column
+def read_raw_vector(input_json, vc=None, shuffle=True, sample=None):  # flows, vectors, valid_column
     # with open(input_file, 'r') as fin:
     #     raw = fin.read().strip().split('\n')
 
@@ -11,11 +11,6 @@ def read_raw_vector(input_json, vc=None, shuffle=True, sample=False):  # flows, 
 
     flows = list()
     vectors = list()
-    # for line in raw:
-    #     if line.strip() == "":
-    #         continue
-    #     flows.append(line.split(':')[0])
-    #     vectors.append([float(x) for x in line.split(':')[1].split(',')])
 
     for key, value in data.items():
         flows.append(key)
@@ -29,8 +24,8 @@ def read_raw_vector(input_json, vc=None, shuffle=True, sample=False):  # flows, 
             shuffled_vectors.append(vectors[index])
         vectors = shuffled_vectors
 
-    if sample is True:
-        vectors = random.sample(vectors, 50000)
+    if sample is not None:
+        vectors = random.sample(vectors, sample)
     vectors = np.array(vectors)
 
     n = len(vectors)
@@ -69,8 +64,8 @@ def normalization(matrix, mean, std):
     n_mat = np.where(n_mat<0.00001, -1, (n_mat - mean) / std)
     return n_mat
 
-def get_train_data(train_file):
-    _, train_raw, valid_columns = read_raw_vector(train_file)
+def get_train_data(train_file, sample=None):
+    _, train_raw, valid_columns = read_raw_vector(train_file, sample=sample)
     train_mean, train_std = get_mean_std(train_raw)
     train_x = normalization(train_raw, train_mean, train_std)
     train_y = np.zeros(len(train_x), dtype=np.int32)

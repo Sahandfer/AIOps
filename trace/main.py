@@ -165,15 +165,16 @@ def main(trainpath):
     # (x_train, y_train), (x_test, y_test), flows_test = \
     #     get_data_vae(train_file, normal_file, abnormal_file)
 
+    # (x_train, y_train) = get_train_data(train_file, sample=200000)
     (x_train, y_train) = get_train_data(train_file)
     config.x_dim = x_train.shape[1]
     config.z_dim = get_z_dim(x_train.shape[1])
 
 
     all_len = x_train.shape[0]
-    print('origin data: %s' % all_len)
-    for i in range(30):
-        print(list(x_train[i]))
+    # print('origin data: %s' % all_len)
+    # for i in range(30):
+    #     print(list(x_train[i]))
     
     valid_rate = 0.1
     x_train, x_valid = train_test_split(x_train, test_size=valid_rate)
@@ -268,7 +269,7 @@ def main(trainpath):
     #                                 config.test_batch_size)
 
     # model_file
-    model_name = './trace_anomaly.model'
+    model_name = './trace_anomalylr001.model'
     # model_name = os.path.join(
     #     'webankdata',
     #     'md_{}_{}.model'.format(
