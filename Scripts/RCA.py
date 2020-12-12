@@ -26,17 +26,23 @@ class RCA():
         self.dictionary_of_times = {}
         self.edges = list(self.trace_data.path.unique())
         if take_minute_averages_of_trace_data:
+            print('Taking 1 minute averages of the trace data.')
             for edge in self.edges:
                 data_subset = self.trace_data.loc[self.trace_data.path == edge].copy()
                 data_subset['time_group'] = data_subset.startTime//60000
                 averaged_data = data_subset.groupby('time_group')[self.time_column].mean()
                 self.dictionary_of_times[edge] = list(averaged_data)
         else:
+            print('Using the full trace data, no averages taken.')
             for edge in self.edges:
                 data_subset = self.trace_data.loc[self.trace_data.path == edge]
                 self.dictionary_of_times[edge] = list(data_subset[self.time_column])
 
         self.find_root_cause_with_KDE = find_root_cause_with_KDE
+        if self.find_root_cause_with_KDE:
+            print('Root cause localisation will be performed using KDE')
+        else:            
+            print('Root cause localisation will be performed using Birch')
 
 
     def run(self):
@@ -44,7 +50,7 @@ class RCA():
         self.create_graph()
         # self.personalize_graph()
         dodgy_node = self.page_rank()
-        print('Pagerank suggests the problematic service is: %s.' % dodgy_node)
+        print('The ranks suggest the problematic service is: %s.' % dodgy_node)
         root_causes = self.analyse_host_data(dodgy_node)
         result_to_send_off = []
         for host, kpi, _ in root_causes[:2]:
@@ -160,7 +166,7 @@ class RCA():
                 root_causes.append((host, KPI_name, score))
         
         root_causes.sort(key=lambda tripple: tripple[2], reverse = True)
-        print('Possible route causes:')
+        print('Possible route causes are listed below:')
         for host, KPI_name, KDE_score in root_causes:
             print('Host: ' + host + ', KPI name: ' + KPI_name + ', Score: %f' % KDE_score)
         return root_causes
