@@ -17,36 +17,206 @@ from sklearn import preprocessing
 from sklearn.cluster import Birch
 from sklearn.neighbors import KernelDensity
 
-
-class RCA():
-
-    def __init__(self, esb_data, trace_data, host_data, use_actual_time=True, use_trace_avg=False, use_KDE=False):
-
+class MicroRCA():
+    def __init__(self, esb_data, trace_data = None, host_data = None, alpha = 0.55):
         self.esb_data = esb_data
         self.trace_data = trace_data
         self.host_data = host_data
-        self.time_column = 'actual_time' if use_actual_time else 'elapsedTime'
-        self.use_trace_avg = use_trace_avg
-        self.use_KDE = use_KDE
-
+        self.alpha = alpha
         self.base_graph = nx.DiGraph()
-        self.times_dict = {}
-        self.trace_processing()
+        self.anomalous_subgraph = nx.DiGraph()
+        self.edges = []
+        self.anomalous_edges  = {}
+        self.personalization = {}
+        self.localized_kpis = {}
+
+
+    def run(self):
+        print('Started building graph...')
+        start_time = time.time()
+        self.build_base_graph()
+        print('Finished building graph in %f seconds.' % (time.time() - start_time))
+
+        print('Started finding anomalous edges...')
+        start_time = time.time()
+        self.find_anomalous_edges()
+        print('Finished finding anomalous edges in %f seconds.' % (time.time() - start_time))
+
+        print('Started extracting anomalous subgraph...')
+        start_time = time.time()
+        self.extract_anomalous_subgraph()
+        print('Finished extracting anomalous subgraph in %f seconds.' % (time.time() - start_time))
+
+        print('Started finding page rank scores...')
+        start_time = time.time()
+        output = [self.page_rank()]
+        print('Finished finding page rank scores in %f seconds.' % (time.time() - start_time))
+
+        print(type(output))
+        return output
+
+
+    def build_base_graph(self):
         self.edges = list(self.trace_data.path.unique())
+        for edge in self.edges:
+            source, destination = edge.split('-')
+            if source != 'Start':
+                self.base_graph.add_edge(source,destination)
+                self.base_graph.nodes[source]['type'] = 'service'
+                self.base_graph.nodes[destination]['type'] = 'service'
+                source_hosts = list(self.trace_data[self.trace_data.serviceName==source]['cmdb_id'].unique())
+                destination_hosts = list(self.trace_data[self.trace_data.serviceName==destination]['cmdb_id'].unique())
+                for source_host in source_hosts:
+                    self.base_graph.add_edge(source, source_host)
+                    self.base_graph.nodes[source_host]['type'] = 'host'
+                for destination_host in destination_hosts:
+                    self.base_graph.add_edge(destination, destination_host)
+                    self.base_graph.nodes[destination_host]['type'] = 'host'
 
-        if use_trace_avg:
-            for edge in self.edges:
-                data_subset = self.trace_data.loc[self.trace_data.path == edge].copy()
-                data_subset['time_group'] = data_subset.startTime//60000
-                averaged_data = data_subset.groupby(
-                    'time_group')[self.time_column].mean()
-                self.times_dict[edge] = list(averaged_data)
-        else:
-            for edge in self.edges:
-                data_subset = self.trace_data.loc[self.trace_data.path == edge]
-                self.times_dict[edge] = list(
-                    data_subset[self.time_column])
+    
+    def find_anomalous_edges(self):
+        for edge in self.edges:
+            elapsed_time = np.array(list(self.trace_data[self.trace_data.path == edge]['elapsedTime']))
+            normalized_time = preprocessing.normalize([elapsed_time]).reshape(-1,1)
+            birch = Birch(branching_factor=50, n_clusters=None, threshold=0.001, compute_labels=True)
+            birch.fit(normalized_time)
+            birch.predict(normalized_time)
+            labels = birch.labels_
+            if np.unique(labels).size > 1:
+                self.anomalous_edges[edge.split('-')[1]] = edge
 
+
+    def extract_anomalous_subgraph(self):
+        for node in self.anomalous_edges.keys():
+            for source, destination, data in self.base_graph.in_edges(node, data=True):
+                edge = (source + '-' + destination)
+                if edge in self.anomalous_edges:
+                    data = self.alpha
+                else:
+                    anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[destination]]['elapsedTime']))
+                    normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']))
+                    data = 0
+                    if len(set(anomalous_data))>1 and len(set(normal_data))>1:
+                        data = anomalous_data.corr(normal_data)
+                    if pd.isna(data):
+                        data=0
+
+                data = round(data, 3)
+                self.anomalous_subgraph.add_edge(source, destination, weight=data)
+                self.anomalous_subgraph.nodes[source]['type'] = self.base_graph.nodes[source]['type']
+                self.anomalous_subgraph.nodes[destination]['type'] = self.base_graph.nodes[destination]['type']
+
+            for source, destination, data in self.base_graph.out_edges(node, data=True):
+                edge = (source + '-' + destination)
+                if edge in self.anomalous_edges:
+                    data = self.alpha
+                else:
+                    if self.base_graph.nodes[destination]['type'] == 'host':
+                        data, KPI = self.get_weight(source, destination)
+                    else:
+                        anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[source]]['elapsedTime']))
+                        normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']))
+                        data = 0
+                        if len(set(anomalous_data))>1 and len(set(normal_data))>1:
+                            data = anomalous_data.corr(normal_data)
+                        if pd.isna(data):
+                            data=0
+
+                data = round(data, 3)
+                self.anomalous_subgraph.add_edge(source, destination, weight=data)
+                self.anomalous_subgraph.nodes[source]['type'] = self.base_graph.nodes[source]['type']
+                self.anomalous_subgraph.nodes[destination]['type'] = self.base_graph.nodes[destination]['type']
+        
+        for node in self.anomalous_edges.keys():
+            data, host, KPI = self.get_personalization(node)
+            self.personalization[node] = data/self.anomalous_subgraph.degree(node)
+            self.localized_kpis[node] = [host, KPI]
+
+        self.anomalous_subgraph = self.anomalous_subgraph.reverse(copy = True)
+
+        # sdd = list(self.anomalous_subgraph.edges(data=True))
+        # for source, destination, data in sdd:
+        #     if self.anomalous_subgraph.nodes[source]['type'] == 'host':
+        #         self.anomalous_subgraph.remove_edge(source,destination)
+        #         self.anomalous_subgraph.add_edge(destination,source,weight=data['weight'])
+
+
+    def page_rank(self):
+        anomaly_scores = nx.pagerank(self.anomalous_subgraph, alpha=0.85, personalization=self.personalization, max_iter=10000)
+        anomaly_scores = sorted(anomaly_scores.items(), key=lambda x: x[1], reverse=True)
+        print('The services ordered by page rank are:')
+        print(anomaly_scores)
+        print('The most anomalous host and KPI of each anomalous node:')
+        for host, _ in anomaly_scores:
+            if host in self.localized_kpis.keys():
+                print(self.localized_kpis[host])
+        return self.localized_kpis[anomaly_scores[0][0]]
+
+        
+    def get_weight(self, service, host):
+            in_edges_weight_avg = 0.0
+            num = 0
+            max_corr = 0.01
+            metric = -1
+            for _, _, data in self.anomalous_subgraph.in_edges(service, data=True):
+                in_edges_weight_avg += data['weight']
+                num += 1            
+            if num > 0:
+                in_edges_weight_avg  = in_edges_weight_avg / num            
+
+            host_data_subset = self.host_data[self.host_data['cmdb_id']==host][['name', 'value']]
+
+            for KPI, values in host_data_subset.groupby('name')['value']:
+                anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[service]]['elapsedTime']))
+                values = pd.Series(list(values))
+                correlation = 0
+                if len(set(anomalous_data))>1 and len(set(values))>1:
+                    correlation = abs(anomalous_data.corr(values))
+                if pd.isna(correlation):
+                    correlation = 0
+                if correlation > max_corr:
+                    max_corr = correlation
+                    metric = KPI
+
+            data = in_edges_weight_avg * max_corr
+            return data, metric
+
+    
+    def get_personalization(self, service):
+            weight_average = 0.0
+            num = 0
+            max_corr = 0.01
+            metric = -1   
+            metric_host = -1     
+            for _, _, data in self.anomalous_subgraph.in_edges(service, data=True):
+                    weight_average += data['weight']
+                    num += 1   
+
+            for _, destination, data in self.anomalous_subgraph.out_edges(service, data=True):
+                        if self.anomalous_subgraph.nodes[destination]['type'] == 'service':
+                            num += 1
+                            weight_average += data['weight']
+
+            hosts = self.trace_data.loc[self.trace_data.serviceName == service].cmdb_id.unique()
+            host_groups = self.host_data[self.host_data['cmdb_id'].isin(hosts)].groupby('cmdb_id')[['name', 'value']]
+
+            for host, host_data_subset in host_groups:
+                for KPI, values in host_data_subset.groupby('name')['value']:
+                    anomalous_data = pd.Series(list(self.trace_data.loc[(self.trace_data.path == self.anomalous_edges[service]) & (self.trace_data.cmdb_id == host)]['elapsedTime']))
+                    values = pd.Series(list(values))
+                    correlation = 0
+                    if len(set(anomalous_data))>1 and len(set(values))>1:
+                        correlation = abs(anomalous_data.corr(values))
+                    if pd.isna(correlation):
+                        correlation = 0
+                    if correlation > max_corr:
+                        metric_host = host
+                        max_corr = correlation
+                        metric = KPI
+        
+            data = weight_average * max_corr
+            return data, metric_host, metric
+        
     def update_esb_data(self, esb_data):
         self.esb_data = esb_data
 
@@ -72,10 +242,10 @@ class RCA():
 
         return (len(outliers) > 0), - np.mean(KDE_scores)
 
-    def analyze_esb(self):
-        
-        values = self.esb_data['avg_time'].tolist()
-        print(values)
+    def analyze_esb(self, esb_dict):
+        esb_tmp = self.esb_data.append(esb_dict, ignore_index=True)
+        values = esb_tmp['avg_time'].tolist()
+        # print(values)
         birch_labels_time = self.birch(values)
         # birch_labels_rate = self.birch(self.esb_data['avg_time'])
         for label in birch_labels_time:
@@ -83,18 +253,28 @@ class RCA():
                 print("Found esb_anomaly in avg_time")
                 return True
 
-        values = self.esb_data['succee_rate'].tolist()
-        print(values)
+        values = esb_tmp['succee_rate'].tolist()
+        # print(values)
         birch_labels_time = self.birch(values)
         for label in birch_labels_time:
             if (label != 0):
                 print("Found esb_anomaly in success rate")
                 return True
-                
+        
+        self.update_esb_data(esb_tmp)
+
         return False
 
     def trace_processing(self):
         print("Started trace processing")
+        dftmp = self.trace_data[self.trace_data['callType']=='RemoteProcess']
+        dftmp = dftmp[['pid','cmdb_id']]
+        dftmp = dftmp.set_index('pid')
+        csf_dict = dftmp.to_dict()
+        csf_cmdb = {str(key):str(values) for key, values in csf_dict['cmdb_id'].items()}
+        for index, row in self.trace_data.iterrows():
+            if row['id'] in csf_cmdb:
+                self.trace_data.at[index, 'cmdb_id'] = csf_cmdb[row['id']]
 
         elapsed_time = {}
         children = {}
@@ -108,7 +288,7 @@ class RCA():
             elapsed_time [row['id']] = float(row['elapsedTime'])
             parent_service[row['id']] = row['serviceName']
 
-        self.trace_data['actual_time'] = 0.0
+        # self.trace_data['actual_time'] = 0.0
         self.trace_data['path'] = ''
         for index, row in self.trace_data.iterrows():
             total_child = 0.0
@@ -117,174 +297,14 @@ class RCA():
             else:
                 self.trace_data.at[index, 'path'] = parent_service[row['pid']] + '-' + row['serviceName']
 
-            if row['id'] not in children.keys():
-                self.trace_data.at[index, 'actual_time'] = row['elapsedTime']
-                continue
-            for child in children[row['id']]:
-                total_child += elapsed_time[child]
-            self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
+            # if row['id'] not in children.keys():
+            #     self.trace_data.at[index, 'actual_time'] = row['elapsedTime']
+            #     continue
+            # for child in children[row['id']]:
+            #     total_child += elapsed_time[child]
+            # self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
         
         print("Trace processed")
-        
-
-    def run(self):
-        # run root cause analysis on the data given
-        self.create_graph()
-        # self.personalize_graph()
-        dodgy_node = self.page_rank()
-        # print('Pagerank suggests the problematic service is: %s.' % dodgy_node)
-        root_causes = self.analyse_host_data(dodgy_node)
-        result_to_send_off = []
-        for host, kpi, _ in root_causes[:2]:
-            result_to_send_off.append([host, kpi])
-        # print('Thus the result to be sent off to the server is:')
-        # print(result_to_send_off)
-        # for node in dodgy_nodes:
-        #     root_causes = self.analyse_host_data(node)
-        #     result_to_send_off = []
-        #     for host, kpi, _ in root_causes[:2]:
-        #         result_to_send_off.append([host, kpi])
-        #     print('Thus the result to be sent off to the server is:')
-        #     print(result_to_send_off)
-        return result_to_send_off
-
-    def create_graph(self):
-        # creates weighted graph from the trace data
-        print("Creating graph")
-
-        for edge in self.edges:
-            source, destination = edge.split('-')
-            if source != 'Start':
-                vector_of_time = self.times_dict[edge]
-                reshaped_vector_of_time = np.reshape(vector_of_time, (-1, 1))
-                if len(reshaped_vector_of_time) > 5000:
-                    k = len(reshaped_vector_of_time) // 5000 + 1
-                    rnge = np.arange(len(reshaped_vector_of_time))
-                    indices = (rnge % k) == 0
-                    reshaped_vector_of_time = reshaped_vector_of_time[indices]
-                KDE = KernelDensity(kernel='gaussian', bandwidth=1.0).fit(
-                    reshaped_vector_of_time)
-                KDE_scores = KDE.score_samples(reshaped_vector_of_time)
-                mean_of_KDE_scores = - np.mean(KDE_scores)
-
-                normalized_vector_of_time = preprocessing.normalize(
-                    [vector_of_time]).reshape(-1, 1)
-                birch = Birch(n_clusters=None, threshold=0.1,
-                              compute_labels=True)
-                birch.fit(normalized_vector_of_time)
-                birch.predict(normalized_vector_of_time)
-                labels = birch.labels_
-                birch_clustering_score = 100 * \
-                    len(labels[np.where(labels != 0)])/len(labels)
-
-                total_weight = mean_of_KDE_scores * birch_clustering_score + \
-                    mean_of_KDE_scores + birch_clustering_score
-
-                self.base_graph.add_edge(
-                    source, destination, weight=total_weight)
-                # print('Added edge: %s with weight %f, ' % (edge, total_weight) + 'KDE performed on %d rows' % len(reshaped_vector_of_time))
-        print('Finished creating graph.')
-
-    def personalize_graph(self):
-        self.personalization = {}
-        for node in self.base_graph.nodes:
-            self.personalization[node] = self.base_graph.in_degree(
-                node)/self.base_graph.out_degree(node)
-        # print(self.personalization)
-
-        # positions = {}
-        # positions['os_022'] = (1,4)
-        # positions['os_021'] = (4,4)
-        # positions['docker_002'] = (0.5,3)
-        # positions['docker_001'] = (1.5,3)
-        # positions['docker_003'] = (3.5,3)
-        # positions['docker_004'] = (4.5,3)
-        # positions['docker_007'] = (0,2)
-        # positions['docker_008'] = (1,2)
-        # positions['db_007'] = (2,2)
-        # positions['db_009'] = (3,2)
-        # positions['docker_006'] = (4,2)
-        # positions['docker_005'] = (5,2)
-        # positions['db_003'] = (2.5,1)
-        # nx.draw_networkx(self.base_graph, positions, node_size = 5500, node_color = '#00BFFF')
-        # plt.show()
-
-    def page_rank(self):
-        # use pagerank to locate the problematic service
-        # page_rank = nx.pagerank(self.base_graph, alpha=0.85, personalization = self.personalization ,max_iter=10000)
-        # page_rank = [(svc, val) for svc, val in dict(sorted(page_rank.items(), key=lambda item: item[1], reverse=True)).items()]
-        print("Starting pagerank")
-        page_rank = []
-        for node in self.base_graph.nodes:
-            weight = 0
-            for _, _, d in self.base_graph.in_edges(node, data=True):
-                weight += d['weight']
-            val = weight
-            page_rank.append((node, val))
-
-        page_rank.sort(key=lambda tripple: tripple[1], reverse=True)
-        # print('All nodes listed by their rank:')
-        # for svc, val in page_rank:
-        # print('Service name: ' + svc + ', score: %f' % val)
-        print("Pagerank finished")
-        if (len(page_rank)):
-            if (len(page_rank[0])):
-                return page_rank[0][0]
-        return False
-
-    def analyse_host_data(self, dodgy_node):
-        print("Analyzing host data")
-
-        # given a problematic service, look for the root cause in the service's host data.
-        dodgy_hosts = self.trace_data.loc[self.trace_data.serviceName ==
-                                          dodgy_node].cmdb_id.unique()
-        host_groups = self.host_data[self.host_data['cmdb_id'].isin(
-            dodgy_hosts)].groupby('cmdb_id')[['name', 'value']]
-
-        # host_groups = self.host_data[self.host_data['cmdb_id'].isin([dodgy_node])].groupby('cmdb_id')[['name', 'value']]
-
-        root_causes = []
-        for host, _ in host_groups:
-            root_causes_for_host = []
-            df = host_groups.get_group(host)
-            name_groups = df.groupby('name')['value'].apply(
-                list).reset_index(name='values')
-            for i in range(len(name_groups)):
-                row = name_groups.iloc[i]
-                name = row['name']
-                values = row['values']
-                if len(set(values)) > 1:
-                    outliers, score = self.find_outliers(values)
-                    if outliers:
-                        root_causes_for_host.append((name, score))
-
-            if len(root_causes_for_host) > 0:
-                KPI_name, score = max(
-                    root_causes_for_host, key=lambda item: item[1])
-                root_causes.append((host, KPI_name, score))
-
-        root_causes.sort(key=lambda tripple: tripple[2], reverse=True)
-        # print('Possible route causes:')
-        # for host, KPI_name, KDE_score in root_causes:
-        # print('Host: ' + host + ', KPI name: ' + KPI_name + ', Score: %f' % KDE_score)
-        print("Data analysis finished")
-
-        return root_causes
-
-    def find_outliers(self, values):
-        # flag if a KPI is exhibiting anomalous behaviour
-        if self.use_KDE:
-            self.kde(values)
-        else:
-            normalized_values = preprocessing.normalize(
-                [values]).reshape(-1, 1)
-            birch = Birch(n_clusters=None, threshold=0.06, compute_labels=True)
-            birch.fit(normalized_values)
-            birch.predict(normalized_values)
-            labels = birch.labels_
-            birch_clustering_score = len(
-                labels[np.where(labels != 0)])/len(labels)
-            return (birch_clustering_score > 0), birch_clustering_score
 
 
 # Three topics are available: platform-index, business-index, trace.
@@ -303,31 +323,24 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
     __slots__ = ['call_type', 'start_time', 'elapsed_time', 'success',
                  'trace_id', 'id', 'pid', 'cmdb_id', 'service_name', 'ds_name']
 
-    def __init__(self, data):
-        self.call_type = data['callType']
-        self.start_time = data['startTime']
-        self.elapsed_time = data['elapsedTime']
-        self.success = data['success']
-        self.trace_id = data['traceId']
-        self.id = data['id']
-        self.pid = data['pid']
-        self.cmdb_id = data['cmdb_id']
-
-        if 'serviceName' in data:
-            # For data['callType']
-            #  in ['CSF', 'OSB', 'RemoteProcess', 'FlyRemote', 'LOCAL']
-            self.service_name = data['serviceName']
-
-        if self.call_type in ['JDBC', 'LOCAL']:
-            self.service_name = data['dsName']
-
     def __new__(self, data):
-        return data
+        self.trace = data
+        if self.trace['callType'] == 'JDBC':
+            try :
+                self.trace['serviceName'] = data['dsName']
+            except:
+                print(data)
+                print('JDBC doesnt have dsName')
+
+        if 'dsName' in self.trace:
+            self.trace.pop('dsName')
+
+        return self.trace
 
 
 def detection(timestamp):
     print('Starting Anomaly Detection')
-    startTime = timestamp - 60000  # one minute before anomaly
+    startTime = timestamp - 180000  # one minute before anomaly
 
     esb_df_temp = esb_df[(esb_df['startTime'] >= startTime) &
                          (esb_df['startTime'] <= timestamp)]
@@ -336,20 +349,19 @@ def detection(timestamp):
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
                            (host_df['timestamp'] <= timestamp)]
 
-    rca_temp = RCA(esb_df_temp, trace_df_temp, host_df_temp, True, True, False)
+    rca_temp = MicroRCA(esb_df_temp, trace_df_temp, host_df_temp)
     results_to_send_off = rca_temp.run()
 
-    print(results_to_send_off)
     print('Anomaly Detection Done.')
     if len(results_to_send_off) == 0:
+        print('Nothing detected')
         return False
-
     # for a in anom_hosts:
     #     item = a.split(':')[0]
     #     if (item not in anoms):
     #         anoms.append(item)
-    print('Nothing detected')
-    # submit(root_causes)
+    print(results_to_send_off)
+    submit(results_to_send_off)
     return True
 
 
@@ -383,43 +395,43 @@ def main():
     trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
                                      'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
 
-    rca = RCA(esb_df, trace_df, host_df, True, True, False)
+    rca = MicroRCA(esb_df)
     esb_anomaly = False
-
+    
+    a_time = 0.0
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
 
         # Host data
         if message.topic == 'platform-index':
+            timenow = data['timestamp']
             for stack in data['body']:
-                if stack == 'os_linux' or stack == 'dcos_docker':
-                    for item in data['body'][stack]:
-                        host_df = host_df.append(item, ignore_index=True)
+                for item in data['body'][stack]:
+                    host_df = host_df.append(item, ignore_index=True)
 
         # ESB data
         elif message.topic == 'business-index':
+            timenow = data['startTime']
             timestamp = data['startTime']
 
             for item in data['body']['esb']:
                 esb_df = esb_df.append(item, ignore_index=True)
-                rca.update_esb_data(esb_df)
-                esb_anomaly = rca.analyze_esb()
+                esb_anomaly = rca.analyze_esb(item)
 
-            if esb_anomaly:
+            if time.time() - a_time >= 600 and esb_anomaly:
                 print("oops")
                 result = detection(timestamp)
                 if result:
-                    esb_anomaly = False
-                    esb_df = pd.DataFrame(columns=[
-                                          'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
-                    host_df = pd.DataFrame(
-                        columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-                    trace_df = pd.DataFrame(columns=[
-                                            'callType', 'startTime', 'elapsedTime', 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+                    a_time =  time.time()
 
         # Trace data
         else:  # message.topic == 'trace'
+            timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
+        
+        esb_df = esb_df[esb_df.startTime >= timenow-600000]
+        host_df = host_df[host_df.timestamp >= timenow-600000]
+        trace_df = trace_df[trace_df.startTime >= timenow-600000]
 
 
 if __name__ == '__main__':
