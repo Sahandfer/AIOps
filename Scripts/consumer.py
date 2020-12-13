@@ -73,14 +73,24 @@ class RCA():
         return (len(outliers) > 0), - np.mean(KDE_scores)
 
     def analyze_esb(self):
+        
         values = self.esb_data['avg_time'].tolist()
         print(values)
         birch_labels_time = self.birch(values)
         # birch_labels_rate = self.birch(self.esb_data['avg_time'])
         for label in birch_labels_time:
             if (label != 0):
-                print("Found esb_anomaly")
+                print("Found esb_anomaly in avg_time")
                 return True
+
+        values = self.esb_data['succee_rate'].tolist()
+        print(values)
+        birch_labels_time = self.birch(values)
+        for label in birch_labels_time:
+            if (label != 0):
+                print("Found esb_anomaly in success rate")
+                return True
+                
         return False
 
     def trace_processing(self):
