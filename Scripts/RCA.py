@@ -8,11 +8,13 @@ from sklearn.neighbors import KernelDensity
 from sklearn.cluster import Birch
 from sklearn import preprocessing
 import matplotlib.pyplot as plt
+import math
 
 
 class RCA():
 
-    def __init__(self, trace_data, host_data, use_actual_time = True, take_minute_averages_of_trace_data = False, find_root_cause_with_KDE = False, find_using_henry_method = True):
+    def __init__(self, trace_data, host_data, use_actual_time = True, take_minute_averages_of_trace_data = False, \
+        find_root_cause_with_KDE = False, find_using_corr_method = True):
         # create a RCA instance
         self.trace_data = trace_data
         self.host_data = host_data
@@ -38,7 +40,7 @@ class RCA():
                 data_subset = self.trace_data.loc[self.trace_data.path == edge]
                 self.dictionary_of_times[edge] = list(data_subset[self.time_column])
 
-        self.find_using_henry_method = find_using_henry_method
+        self.find_using_corr_method = find_using_corr_method
 
         self.find_root_cause_with_KDE = find_root_cause_with_KDE
         if self.find_root_cause_with_KDE:
@@ -50,7 +52,8 @@ class RCA():
     def run(self):
         # run root cause analysis on the data given
         self.create_graph()
-        self.personalize_graph()
+        # self.personalize_graph()
+        self.create_personalization()
         dodgy_node = self.page_rank()
         print('The ranks suggest the problematic service is: %s.' % dodgy_node)
         root_causes = self.analyse_host_data(dodgy_node)
@@ -63,9 +66,9 @@ class RCA():
 
         #     self.base_graph.nodes[node]['personalisation'] = max_corr * ____
 
-        result_to_send_off = []
-        for host, kpi, _ in root_causes[:2]:
-            result_to_send_off.append([host, kpi])
+        # result_to_send_off = []
+        # for host, kpi, _ in root_causes[:2]:
+        #     result_to_send_off.append([host, kpi])
         print('Thus the result to be sent off to the server is:')
         print(result_to_send_off)
         return result_to_send_off
@@ -134,16 +137,27 @@ class RCA():
 
 
     def page_rank(self):
+<<<<<<< HEAD
         self.base_graph=self.base_graph.reverse(copy=True)
+=======
+>>>>>>> 9099032c0903ec475083d5f0fcb0c0bca08c7f91
         page_rank = nx.pagerank(self.base_graph, alpha=0.85, personalization = self.personalization ,max_iter=10000)
         page_rank = [(svc, val) for svc, val in dict(sorted(page_rank.items(), key=lambda item: item[1], reverse=True)).items()]
         # page_rank = []
         # for node in self.base_graph.nodes:
+<<<<<<< HEAD
             # weight = 0
             # for _, _, d in self.base_graph.in_edges(node, data=True):
                 # weight += d['weight']
             # val = weight
             # page_rank.append((node, val))
+=======
+        #     weight = 0
+        #     for _, _, d in self.base_graph.in_edges(node, data=True):
+        #         weight += d['weight']
+        #     val = weight
+        #     page_rank.append((node, val))
+>>>>>>> 9099032c0903ec475083d5f0fcb0c0bca08c7f91
         page_rank.sort(key=lambda tripple: tripple[1], reverse = True)
         print('All nodes listed by their rank:')
         for node, val in page_rank:
@@ -153,6 +167,8 @@ class RCA():
 
 
     def analyse_host_data(self, dodgy_node):
+        if self.find_using_corr_method:
+            return [dodgy_node, self.base_graph[dodgy_node]['type']]
         # given a problematic service, look for the root cause in the service's host data.
         # dodgy_hosts = self.trace_data.loc[self.trace_data.serviceName == dodgy_node].cmdb_id.unique()
         # host_groups = self.host_data[self.host_data['cmdb_id'].isin(dodgy_hosts)].groupby('cmdb_id')[['name', 'value']]
@@ -199,8 +215,82 @@ class RCA():
             labels = birch.labels_
             birch_clustering_score = len(labels[np.where(labels!=0)])/len(labels)
             return (birch_clustering_score > 0), birch_clustering_score
-        
-        # if self.find_using_henry_method:
+
+    def node_weight(self, node):
+        anomaly_graph = self.base_graph
+        trace_df = self.trace_data
+        host_df = self.host_data
+
+        #trace_df = anomalous trace edge (pser-ser)
+        #host_df = host_data with same cmdb id as edge 1
+        svc = node
+        kpi_df = host_df[host_df.cmdb_id==svc]
+        # for host, _ in host_groups:
+        root_causes_for_host = []
+        trace_df = trace_df[trace_df['serviceName']==svc]
+        # anomalous_trace = anomalous_trace['actual_time']
+        trace_groups = trace_df.groupby('callType')['actual_time']
+        call_groups = trace_df.callType.unique()
+        # print(anomalous_trace)
+
+        # anomalous_trace['startTime'] = pd.to_datetime(anomalous_trace.startTime, unit='ms')
+        # anomalous_trace = anomalous_trace.set_index(pd.DatetimeIndex(anomalous_trace['startTime'])+ pd.Timedelta('08:00:00'))
+        # anomalous_trace['actual_time'].resample('1Min').mean()
+        # print(anomalous_trace)
+
+        kpi_groups = kpi_df.groupby('name')['value']
+        name_groups = kpi_df.name.unique()
+
+        max_corr = 0.01
+        metric = 'Nothing correlated'
+        for call in call_groups:
+            trace = trace_groups.get_group(call)
+            for name in name_groups:
+                hdf = kpi_groups.get_group(name)
+                # print('hdf', str(name), hdf.to_numpy().flatten())
+                if len(set(hdf.to_numpy().flatten()))> 1:
+                    # print(anomalous_trace.to_numpy().flatten())
+                    # print(hdf.to_numpy().flatten())
+                    tmp = abs(trace.corr(hdf))
+                    # print(tmp)
+                    if math.isnan(tmp):
+                        tmp = 0
+                    elif tmp > max_corr:
+                        max_corr = tmp
+                        metric = str(name)
+
+
+        edges_weight_avg = 0.0
+        num = 0
+        for u, v, data in anomaly_graph.in_edges(svc, data=True):
+            num = num + 1
+            edges_weight_avg = edges_weight_avg + data['weight']
+
+        for u, v, data in anomaly_graph.out_edges(svc, data=True):
+            # if anomaly_graph.nodes[v]['type'] == 'service':
+            num = num + 1
+            edges_weight_avg = edges_weight_avg + data['weight']
+
+        edges_weight_avg  = edges_weight_avg / num
+
+        personalization = edges_weight_avg * max_corr
+
+        return personalization, metric
+
+    def create_personalization(self):
+        personalization = {}
+        for node in self.base_graph.nodes():
+            max_corr, component = self.node_weight(node)
+            personalization[node] = max_corr / self.base_graph.degree(node)
+            self.base_graph.nodes[node]['type'] = str(component)
+            print(personalization[node])
+        self.personalization = personalization
+
+
+# put your path here
+# path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
+path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\'
+        # if self.find_using_corr_method:
         #     subset_data = self.trace_data.loc[self.trace_data.serviceName == dodgy_node].elapsedTime
         #     x = subset_data.corrwith(values)
         #     return x
@@ -208,17 +298,19 @@ class RCA():
 
 
 # put your path here
-path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
+# path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
 
 # adjust file names appropriately
 trace = pd.read_csv(path + 'trace_5_26.csv')
 trace = trace.sort_values(by=['startTime'])
-trace = trace[trace.startTime < trace.startTime[0]+1260000]
+# trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
 host = pd.read_csv(path + 'kpi_data_526.csv')
 host = host.sort_values(by=['timestamp'])
-host = host[host.timestamp < host.timestamp[0]+1260000]
+# host = host[host.timestamp < host.timestamp[0]+1260000]
 
-# the third argument is whether or not to use 'actual_time' or 'elapsedTime'. True means use 'actual_time'
-RCA = RCA(trace, host, False, True, False)
+# # the third argument is whether or not to use 'actual_time' or 'elapsedTime'. True means use 'actual_time'
+RCA = RCA(trace, host, use_actual_time = True, take_minute_averages_of_trace_data = False, \
+        find_root_cause_with_KDE = True, find_using_corr_method = True)
 RCA.run()
+# print(RCA.node_weight(node = 'docker_002'))
