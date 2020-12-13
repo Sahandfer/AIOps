@@ -4,6 +4,7 @@ import time
 import numpy as np
 import pandas as pd
 import networkx as nx
+from termcolor import colored
 from sklearn import preprocessing
 from sklearn.cluster import Birch
 from sklearn.neighbors import KernelDensity
@@ -11,45 +12,63 @@ from sklearn.neighbors import KernelDensity
 
 
 class MicroRCA():
-    def __init__(self, trace_data, host_data, alpha = 0.55):
+    def __init__(self, trace_data, host_data, alpha = 0.55, take_minute_averages_of_trace_data = True, division_milliseconds = 60000):
         self.trace_data = trace_data
         self.host_data = host_data
         self.alpha = alpha
         self.base_graph = nx.DiGraph()
         self.anomalous_subgraph = nx.DiGraph()
-        self.edges = []
+        self.edges = list(self.trace_data.path.unique())
         self.anomalous_edges  = {}
         self.personalization = {}
         self.localized_kpis = {}
+        self.take_minute_averages_of_trace_data = take_minute_averages_of_trace_data
+
+        if take_minute_averages_of_trace_data:
+            print('Taking %dms averages of the trace data.' % division_milliseconds)
+            averaged_datasets = []
+            for edge in self.edges:
+                data_subset = self.trace_data.loc[self.trace_data.path == edge].copy()
+                data_subset['time_group'] = data_subset.startTime//division_milliseconds
+                averaged_data = data_subset.groupby(['path', 'serviceName', 'cmdb_id', 'time_group'])['elapsedTime'].mean().reset_index()
+                averaged_datasets.append(averaged_data)            
+            self.trace_data = pd.concat(averaged_datasets, ignore_index = True).sort_values(by = ['time_group'])
+        else:
+            print('Using the full trace data, no averages taken.')
+            for edge in self.edges:
+                data_subset = self.trace_data.loc[self.trace_data.path == edge]
 
 
     def run(self):
+        print('Running RCA on %d trace data rows and %d host data rows' % (len(self.trace_data), len(self.host_data)))
+        overall_start_time = time.time()
+
         print('Started building graph...')
         start_time = time.time()
         self.build_base_graph()
-        print('Finished building graph in %f seconds.' % (time.time() - start_time))
+        print('Finished building graph in ' + colored('%f','cyan') % (time.time() - start_time) + ' seconds.')
 
         print('Started finding anomalous edges...')
         start_time = time.time()
         self.find_anomalous_edges()
-        print('Finished finding anomalous edges in %f seconds.' % (time.time() - start_time))
+        print('Finished finding anomalous edges in ' + colored('%f','cyan') % (time.time() - start_time) + ' seconds.')
 
         print('Started extracting anomalous subgraph...')
         start_time = time.time()
         self.extract_anomalous_subgraph()
-        print('Finished extracting anomalous subgraph in %f seconds.' % (time.time() - start_time))
+        print('Finished extracting anomalous subgraph in ' + colored('%f','cyan') % (time.time() - start_time) + ' seconds.')
 
-        print('Started finding page rank scores...')
+        print('Started finding pagerank scores...')
         start_time = time.time()
-        output = [self.page_rank()]
-        print('Finished finding page rank scores in %f seconds.' % (time.time() - start_time))
+        output = self.page_rank()
+        print('Finished finding pagerank scores in ' + colored('%f','cyan') % (time.time() - start_time) + ' seconds.')
+        print('The output to send to the server is: '+ colored(str(output), 'magenta'))
 
-        print(type(output))
+        print('RCA finished in ' + colored('%f','cyan') % (time.time() - overall_start_time) + ' seconds.')
         return output
 
 
     def build_base_graph(self):
-        self.edges = list(self.trace_data.path.unique())
         for edge in self.edges:
             source, destination = edge.split('-')
             if source != 'Start':
@@ -70,9 +89,11 @@ class MicroRCA():
         for edge in self.edges:
             elapsed_time = np.array(list(self.trace_data[self.trace_data.path == edge]['elapsedTime']))
             normalized_time = preprocessing.normalize([elapsed_time]).reshape(-1,1)
-            birch = Birch(branching_factor=50, n_clusters=None, threshold=0.001, compute_labels=True)
-            birch.fit(normalized_time)
-            birch.predict(normalized_time)
+            if self.take_minute_averages_of_trace_data:
+                birch = Birch(branching_factor=50, n_clusters=None, threshold=0.05, compute_labels=True)
+            else:
+                birch = Birch(branching_factor=50, n_clusters=None, threshold=0.001, compute_labels=True)
+            birch.fit_predict(normalized_time)
             labels = birch.labels_
             if np.unique(labels).size > 1:
                 self.anomalous_edges[edge.split('-')[1]] = edge
@@ -104,7 +125,7 @@ class MicroRCA():
                     data = self.alpha
                 else:
                     if self.base_graph.nodes[destination]['type'] == 'host':
-                        data, KPI = self.get_weight(source, destination)
+                        data, _ = self.get_weight(source, destination)
                     else:
                         anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[source]]['elapsedTime']))
                         normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']))
@@ -120,9 +141,9 @@ class MicroRCA():
                 self.anomalous_subgraph.nodes[destination]['type'] = self.base_graph.nodes[destination]['type']
         
         for node in self.anomalous_edges.keys():
-            data, host, KPI = self.get_personalization(node)
+            data, metrics = self.get_personalization(node)
             self.personalization[node] = data/self.anomalous_subgraph.degree(node)
-            self.localized_kpis[node] = [host, KPI]
+            self.localized_kpis[node] = metrics
 
         self.anomalous_subgraph = self.anomalous_subgraph.reverse(copy = True)
 
@@ -134,15 +155,23 @@ class MicroRCA():
 
 
     def page_rank(self):
-        anomaly_scores = nx.pagerank(self.anomalous_subgraph, alpha=0.85, personalization=self.personalization, max_iter=10000)
-        anomaly_scores = sorted(anomaly_scores.items(), key=lambda x: x[1], reverse=True)
-        print('The services ordered by page rank are:')
-        print(anomaly_scores)
-        print('The most anomalous host and KPI of each anomalous node:')
-        for host, _ in anomaly_scores:
-            if host in self.localized_kpis.keys():
-                print(self.localized_kpis[host])
-        return self.localized_kpis[anomaly_scores[0][0]]
+        try:
+            anomaly_scores = nx.pagerank(self.anomalous_subgraph, alpha=0.85, personalization=self.personalization, max_iter=10000)
+            anomaly_scores = sorted(anomaly_scores.items(), key=lambda x: x[1], reverse=True)
+        except:
+            print(colored('Pagerank did not converge', 'red'))
+            return []
+
+        if len(anomaly_scores)>0:
+            print('The services with pagerank score exceeding 0 are:')
+            col_width = max(len(str(word)) for row in anomaly_scores for word in row) 
+            for pair in anomaly_scores:
+                if pair[1]>0:
+                    print("".join(str(word).ljust(col_width) for word in pair))
+            return [[host, KPI] for host, KPI, _ in self.localized_kpis[anomaly_scores[0][0]]]
+        else:
+            print(colored('NO ANOMALIES DETECTED', 'red'))
+            return []
 
         
     def get_weight(self, service, host):
@@ -178,8 +207,7 @@ class MicroRCA():
             weight_average = 0.0
             num = 0
             max_corr = 0.01
-            metric = -1   
-            metric_host = -1     
+            metrics = []    
             for _, _, data in self.anomalous_subgraph.in_edges(service, data=True):
                     weight_average += data['weight']
                     num += 1   
@@ -199,15 +227,27 @@ class MicroRCA():
                     correlation = 0
                     if len(set(anomalous_data))>1 and len(set(values))>1:
                         correlation = abs(anomalous_data.corr(values))
+                        normalized_time = preprocessing.normalize([np.array(values)]).reshape(-1,1)
+                        birch = Birch(branching_factor=50, n_clusters=None, threshold=0.005, compute_labels=True)
+                        birch.fit_predict(normalized_time)
+                        labels = birch.labels_
+                        coefficient = int(np.unique(labels).size > 1)
+                        correlation = coefficient * correlation
                     if pd.isna(correlation):
                         correlation = 0
                     if correlation > max_corr:
-                        metric_host = host
+                        metrics.append((host, KPI, correlation))
                         max_corr = correlation
-                        metric = KPI
         
             data = weight_average * max_corr
-            return data, metric_host, metric
+            metrics.sort(key = lambda tup: tup[2], reverse = True )
+            if len(metrics) > 1:
+                if metrics[1][2]/metrics[0][2] > 0.9:
+                    return data, metrics[:2]
+                else:
+                    return data, metrics[:1]
+            else:
+                return data, metrics
 
 
 path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
@@ -215,5 +255,5 @@ path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Manag
 t = pd.read_csv(path+'trace_untouched_5_26.csv')
 h = pd.read_csv(path+'kpi_data_526.csv')
 
-detector = MicroRCA(t, h)
+detector = MicroRCA(t, h, take_minute_averages_of_trace_data = True)
 detector.run()
