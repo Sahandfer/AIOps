@@ -50,7 +50,7 @@ class RCA():
     def run(self):
         # run root cause analysis on the data given
         self.create_graph()
-        # self.personalize_graph()
+        self.personalize_graph()
         dodgy_node = self.page_rank()
         print('The ranks suggest the problematic service is: %s.' % dodgy_node)
         root_causes = self.analyse_host_data(dodgy_node)
@@ -112,41 +112,42 @@ class RCA():
     def personalize_graph(self):
         self.personalization = {}
         for node in self.base_graph.nodes:
-            self.personalization[node] = self.base_graph.in_degree(node)/self.base_graph.out_degree(node)
+            self.personalization[node] = 1
         # print(self.personalization)
                 
-        positions = {}
-        positions['os_022'] = (1,4)
-        positions['os_021'] = (4,4)
-        positions['docker_002'] = (0.5,3)
-        positions['docker_001'] = (1.5,3)
-        positions['docker_003'] = (3.5,3)
-        positions['docker_004'] = (4.5,3)
-        positions['docker_007'] = (0,2)
-        positions['docker_008'] = (1,2)
-        positions['db_007'] = (2,2)
-        positions['db_009'] = (3,2)
-        positions['docker_006'] = (4,2)
-        positions['docker_005'] = (5,2)
-        positions['db_003'] = (2.5,1)
-        nx.draw_networkx(self.base_graph, positions, node_size = 5500, node_color = '#00BFFF')
-        plt.show()
+        # positions = {}
+        # positions['os_022'] = (1,4)
+        # positions['os_021'] = (4,4)
+        # positions['docker_002'] = (0.5,3)
+        # positions['docker_001'] = (1.5,3)
+        # positions['docker_003'] = (3.5,3)
+        # positions['docker_004'] = (4.5,3)
+        # positions['docker_007'] = (0,2)
+        # positions['docker_008'] = (1,2)
+        # positions['db_007'] = (2,2)
+        # positions['db_009'] = (3,2)
+        # positions['docker_006'] = (4,2)
+        # positions['docker_005'] = (5,2)
+        # positions['db_003'] = (2.5,1)
+        # nx.draw_networkx(self.base_graph, positions, node_size = 5500, node_color = '#00BFFF')
+        # plt.show()
 
 
     def page_rank(self):
-        # page_rank = nx.pagerank(self.base_graph, alpha=0.85, personalization = self.personalization ,max_iter=10000)
-        # page_rank = [(svc, val) for svc, val in dict(sorted(page_rank.items(), key=lambda item: item[1], reverse=True)).items()]
-        page_rank = []
-        for node in self.base_graph.nodes:
-            weight = 0
-            for _, _, d in self.base_graph.in_edges(node, data=True):
-                weight += d['weight']
-            val = weight
-            page_rank.append((node, val))
+        self.base_graph=self.base_graph.reverse(copy=True)
+        page_rank = nx.pagerank(self.base_graph, alpha=0.85, personalization = self.personalization ,max_iter=10000)
+        page_rank = [(svc, val) for svc, val in dict(sorted(page_rank.items(), key=lambda item: item[1], reverse=True)).items()]
+        # page_rank = []
+        # for node in self.base_graph.nodes:
+            # weight = 0
+            # for _, _, d in self.base_graph.in_edges(node, data=True):
+                # weight += d['weight']
+            # val = weight
+            # page_rank.append((node, val))
         page_rank.sort(key=lambda tripple: tripple[1], reverse = True)
         print('All nodes listed by their rank:')
-        for svc, val in page_rank:
-            print('Service name: ' + svc + ', score: %f' % val)
+        for node, val in page_rank:
+            print('Service name: ' + node + ', score: %f' % val)
         return page_rank[0][0]
 
 
