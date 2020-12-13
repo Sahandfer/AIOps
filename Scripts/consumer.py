@@ -245,7 +245,7 @@ class MicroRCA():
     def analyze_esb(self, esb_dict):
         esb_tmp = self.esb_data.append(esb_dict, ignore_index=True)
         values = esb_tmp['avg_time'].tolist()
-        print(values)
+        # print(values)
         birch_labels_time = self.birch(values)
         # birch_labels_rate = self.birch(self.esb_data['avg_time'])
         for label in birch_labels_time:
@@ -254,7 +254,7 @@ class MicroRCA():
                 return True
 
         values = esb_tmp['succee_rate'].tolist()
-        print(values)
+        # print(values)
         birch_labels_time = self.birch(values)
         for label in birch_labels_time:
             if (label != 0):
@@ -398,8 +398,7 @@ def main():
     rca = MicroRCA(esb_df)
     esb_anomaly = False
     
-    timenow = 0
-    a_time = time.time()
+    a_time = 0.0
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
 
@@ -413,6 +412,7 @@ def main():
         # ESB data
         elif message.topic == 'business-index':
             timenow = data['startTime']
+            timestamp = data['startTime']
 
             for item in data['body']['esb']:
                 esb_df = esb_df.append(item, ignore_index=True)
@@ -426,7 +426,7 @@ def main():
 
         # Trace data
         else:  # message.topic == 'trace'
-            timestamp = data['startTime']
+            timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
         
         esb_df = esb_df[esb_df.startTime >= timenow-600000]
