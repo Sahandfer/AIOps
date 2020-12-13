@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 class RCA():
 
-    def __init__(self, trace_data, host_data, use_actual_time = True, take_minute_averages_of_trace_data = False, find_root_cause_with_KDE = False):
+    def __init__(self, trace_data, host_data, use_actual_time = True, take_minute_averages_of_trace_data = False, find_root_cause_with_KDE = False, find_using_henry_method = True):
         # create a RCA instance
         self.trace_data = trace_data
         self.host_data = host_data
@@ -38,6 +38,8 @@ class RCA():
                 data_subset = self.trace_data.loc[self.trace_data.path == edge]
                 self.dictionary_of_times[edge] = list(data_subset[self.time_column])
 
+        self.find_using_henry_method = find_using_henry_method
+
         self.find_root_cause_with_KDE = find_root_cause_with_KDE
         if self.find_root_cause_with_KDE:
             print('Root cause localisation will be performed using KDE')
@@ -52,6 +54,15 @@ class RCA():
         dodgy_node = self.page_rank()
         print('The ranks suggest the problematic service is: %s.' % dodgy_node)
         root_causes = self.analyse_host_data(dodgy_node)
+        
+        # for nodes in self.base_graph.nodes:
+        #     max_corr = self.analyse_host_data(node)
+
+        #     for _, _, data in self.base_graph.out_edges(node):
+        #         #calcualte average...
+
+        #     self.base_graph.nodes[node]['personalisation'] = max_corr * ____
+
         result_to_send_off = []
         for host, kpi, _ in root_causes[:2]:
             result_to_send_off.append([host, kpi])
@@ -104,22 +115,22 @@ class RCA():
             self.personalization[node] = self.base_graph.in_degree(node)/self.base_graph.out_degree(node)
         # print(self.personalization)
                 
-        # positions = {}
-        # positions['os_022'] = (1,4)
-        # positions['os_021'] = (4,4)
-        # positions['docker_002'] = (0.5,3)
-        # positions['docker_001'] = (1.5,3)
-        # positions['docker_003'] = (3.5,3)
-        # positions['docker_004'] = (4.5,3)
-        # positions['docker_007'] = (0,2)
-        # positions['docker_008'] = (1,2)
-        # positions['db_007'] = (2,2)
-        # positions['db_009'] = (3,2)
-        # positions['docker_006'] = (4,2)
-        # positions['docker_005'] = (5,2)
-        # positions['db_003'] = (2.5,1)
-        # nx.draw_networkx(self.base_graph, positions, node_size = 5500, node_color = '#00BFFF')
-        # plt.show()
+        positions = {}
+        positions['os_022'] = (1,4)
+        positions['os_021'] = (4,4)
+        positions['docker_002'] = (0.5,3)
+        positions['docker_001'] = (1.5,3)
+        positions['docker_003'] = (3.5,3)
+        positions['docker_004'] = (4.5,3)
+        positions['docker_007'] = (0,2)
+        positions['docker_008'] = (1,2)
+        positions['db_007'] = (2,2)
+        positions['db_009'] = (3,2)
+        positions['docker_006'] = (4,2)
+        positions['docker_005'] = (5,2)
+        positions['db_003'] = (2.5,1)
+        nx.draw_networkx(self.base_graph, positions, node_size = 5500, node_color = '#00BFFF')
+        plt.show()
 
 
     def page_rank(self):
@@ -142,10 +153,10 @@ class RCA():
 
     def analyse_host_data(self, dodgy_node):
         # given a problematic service, look for the root cause in the service's host data.
-        dodgy_hosts = self.trace_data.loc[self.trace_data.serviceName == dodgy_node].cmdb_id.unique()
-        host_groups = self.host_data[self.host_data['cmdb_id'].isin(dodgy_hosts)].groupby('cmdb_id')[['name', 'value']]
+        # dodgy_hosts = self.trace_data.loc[self.trace_data.serviceName == dodgy_node].cmdb_id.unique()
+        # host_groups = self.host_data[self.host_data['cmdb_id'].isin(dodgy_hosts)].groupby('cmdb_id')[['name', 'value']]
 
-        # host_groups = self.host_data[self.host_data['cmdb_id'].isin([dodgy_node])].groupby('cmdb_id')[['name', 'value']]
+        host_groups = self.host_data[self.host_data['cmdb_id']==dodgy_node].groupby('cmdb_id')[['name', 'value']]
 
         root_causes = []
         for host, _ in host_groups:
@@ -171,7 +182,7 @@ class RCA():
             print('Host: ' + host + ', KPI name: ' + KPI_name + ', Score: %f' % KDE_score)
         return root_causes
 
-    def find_outliers(self, values):
+    def find_outliers(self, values, dodgy_node='hello'):
         # flag if a KPI is exhibiting anomalous behaviour
         if self.find_root_cause_with_KDE:
             X = np.reshape(values, (-1, 1))
@@ -187,6 +198,12 @@ class RCA():
             labels = birch.labels_
             birch_clustering_score = len(labels[np.where(labels!=0)])/len(labels)
             return (birch_clustering_score > 0), birch_clustering_score
+        
+        # if self.find_using_henry_method:
+        #     subset_data = self.trace_data.loc[self.trace_data.serviceName == dodgy_node].elapsedTime
+        #     x = subset_data.corrwith(values)
+        #     return x
+
 
 
 # put your path here
