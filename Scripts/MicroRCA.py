@@ -41,9 +41,10 @@ class MicroRCA():
 
         print('Started finding page rank scores...')
         start_time = time.time()
-        output = self.page_rank()
+        output = [self.page_rank()]
         print('Finished finding page rank scores in %f seconds.' % (time.time() - start_time))
 
+        print(type(output))
         return output
 
 
@@ -121,7 +122,7 @@ class MicroRCA():
         for node in self.anomalous_edges.keys():
             data, host, KPI = self.get_personalization(node)
             self.personalization[node] = data/self.anomalous_subgraph.degree(node)
-            self.localized_kpis[node] = (host, KPI)
+            self.localized_kpis[node] = [host, KPI]
 
         self.anomalous_subgraph = self.anomalous_subgraph.reverse(copy = True)
 
