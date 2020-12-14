@@ -333,8 +333,8 @@ class MicroRCA():
         print(self.trace_data)
 
 
-Three topics are available: platform-index, business-index, trace.
-Subscribe at least one of them.
+# Three topics are available: platform-index, business-index, trace.
+# Subscribe at least one of them.
 AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
 CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
                          bootstrap_servers=['172.21.0.8', ],
@@ -459,11 +459,14 @@ def main():
         else:  # message.topic == 'trace'
             timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
-        
+
         esb_df = esb_df[(esb_df.startTime >= (timenow-1260000))]
         host_df = host_df[(host_df.timestamp >= (timenow-1260000))]
         trace_df = trace_df[(trace_df.startTime >= (timenow-1260000))]
 
+        # print(esb_df.tail())
+        # print(host_df.tail())
+        # print(trace_df.tail())
 
 if __name__ == '__main__':
     main()
