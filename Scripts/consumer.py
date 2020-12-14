@@ -13,6 +13,7 @@ import time
 import numpy as np
 import pandas as pd
 import networkx as nx
+from termcolor import colored
 from sklearn import preprocessing
 from sklearn.cluster import Birch
 from sklearn.neighbors import KernelDensity
@@ -24,6 +25,7 @@ class MicroRCA():
         self.trace_data = trace_data
         self.host_data = host_data
         self.alpha = alpha
+        self.base_graph = nx.DiGraph()
         self.anomalous_subgraph = nx.DiGraph()
         self.anomalous_edges  = {}
         self.personalization = {}
@@ -115,8 +117,8 @@ class MicroRCA():
                 if edge in self.anomalous_edges:
                     data = self.alpha
                 else:
-                    anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[destination]]['elapsedTime']))
-                    normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']))
+                    anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[destination]]['elapsedTime']), dtype='float64')
+                    normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']), dtype='float64')
                     data = 0
                     if len(set(anomalous_data))>1 and len(set(normal_data))>1:
                         data = anomalous_data.corr(normal_data)
@@ -136,8 +138,8 @@ class MicroRCA():
                     if self.base_graph.nodes[destination]['type'] == 'host':
                         data, _ = self.get_weight(source, destination)
                     else:
-                        anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[source]]['elapsedTime']))
-                        normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']))
+                        anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[source]]['elapsedTime']), dtype='float64')
+                        normal_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == edge]['elapsedTime']), dtype='float64')
                         data = 0
                         if len(set(anomalous_data))>1 and len(set(normal_data))>1:
                             data = anomalous_data.corr(normal_data)
@@ -197,8 +199,8 @@ class MicroRCA():
             host_data_subset = self.host_data[self.host_data['cmdb_id']==host][['name', 'value']]
 
             for KPI, values in host_data_subset.groupby('name')['value']:
-                anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[service]]['elapsedTime']))
-                values = pd.Series(list(values))
+                anomalous_data = pd.Series(list(self.trace_data.loc[self.trace_data.path == self.anomalous_edges[service]]['elapsedTime']), dtype='float64')
+                values = pd.Series(list(values), dtype='float64')
                 correlation = 0
                 if len(set(anomalous_data))>1 and len(set(values))>1:
                     correlation = abs(anomalous_data.corr(values))
@@ -231,8 +233,8 @@ class MicroRCA():
 
             for host, host_data_subset in host_groups:
                 for KPI, values in host_data_subset.groupby('name')['value']:
-                    anomalous_data = pd.Series(list(self.trace_data.loc[(self.trace_data.path == self.anomalous_edges[service]) & (self.trace_data.cmdb_id == host)]['elapsedTime']))
-                    values = pd.Series(list(values))
+                    anomalous_data = pd.Series(list(self.trace_data.loc[(self.trace_data.path == self.anomalous_edges[service]) & (self.trace_data.cmdb_id == host)]['elapsedTime']), dtype='float64')
+                    values = pd.Series(list(values), dtype='float64')
                     correlation = 0
                     if len(set(anomalous_data))>1 and len(set(values))>1:
                         correlation = abs(anomalous_data.corr(values))
@@ -321,18 +323,18 @@ class MicroRCA():
         for index, row in self.trace_data.iterrows():
             parent_service[row['id']] = row['serviceName']
 
-        self.trace_data['path'] = ''
         for index, row in self.trace_data.iterrows():
             if row['pid'] not in parent_service.keys():
                 self.trace_data.at[index, 'path'] = 'Start-' + row['serviceName']
             else:
                 self.trace_data.at[index, 'path'] = parent_service[row['pid']] + '-' + row['serviceName']
-        
+
         print("Trace processed")
+        print(self.trace_data)
 
 
-# Three topics are available: platform-index, business-index, trace.
-# Subscribe at least one of them.
+Three topics are available: platform-index, business-index, trace.
+Subscribe at least one of them.
 AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
 CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
                          bootstrap_servers=['172.21.0.8', ],
@@ -370,6 +372,8 @@ def detection(timestamp):
                              (trace_df['startTime'] <= timestamp)]
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
                            (host_df['timestamp'] <= timestamp)]
+    print(len(trace_df_temp), trace_df_temp.head())
+    print(len(host_df_temp), host_df_temp.head())
 
     rca_temp = MicroRCA(trace_data=trace_df_temp, host_data=host_df_temp)
     results_to_send_off = rca_temp.run()
@@ -456,10 +460,31 @@ def main():
             timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
         
-        esb_df = esb_df[esb_df.startTime >= timenow-1260000]
-        host_df = host_df[host_df.timestamp >= timenow-1260000]
-        trace_df = trace_df[trace_df.startTime >= timenow-1260000]
+        esb_df = esb_df[(esb_df.startTime >= (timenow-1260000))]
+        host_df = host_df[(host_df.timestamp >= (timenow-1260000))]
+        trace_df = trace_df[(trace_df.startTime >= (timenow-1260000))]
 
 
 if __name__ == '__main__':
     main()
+
+    '''
+        Bellow are for testing purposes
+    '''
+    # global host_df, trace_df
+    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\'
+    # trace_df = pd.read_csv(path + 'trace_5_26.csv')
+    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
+    # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
+    # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
+
+    # host_df = pd.read_csv(path + 'kpi_data_526.csv')
+    # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
+
+    # # print(trace_df)
+    # print(host_df)
+    # timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    # print(timestamp)
+    # host_df = host_df[(host_df.timestamp >= (timestamp-1260000))]
+    # print(host_df)
+    # detection(timestamp)
