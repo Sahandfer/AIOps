@@ -320,6 +320,7 @@ class MicroRCA():
                 self.trace_data.at[index, 'cmdb_id'] = csf_cmdb[row['id']]
 
         parent_service = {}
+        self.trace_data['path'] = ""
         for index, row in self.trace_data.iterrows():
             parent_service[row['id']] = row['serviceName']
 
@@ -366,8 +367,10 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 
 def detection(timestamp):
     print('Starting Anomaly Detection')
-    startTime = timestamp - 1200000  # one minute before anomaly
+    startTime = timestamp - 600000  # one minute before anomaly
 
+    print(len(trace_df), trace_df.head())
+    print(len(host_df), host_df.head())
     trace_df_temp = trace_df[(trace_df['startTime'] >= startTime) &
                              (trace_df['startTime'] <= timestamp)]
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
@@ -442,27 +445,31 @@ def main():
             for item in data['body']['esb']:
                 esb_df = esb_df.append(item, ignore_index=True)
                 esb_anomaly = rca.analyze_esb(item)
+                # print(item)
 
             if time.time() - a_time >= 600 and esb_anomaly:
                 timestamp = data['startTime']
                 print("oops")
-                # try:
-                #     thread = threading.Thread( target = detection, args = (timestamp, ) )
-                #     thread.start()
-                # except:
-                #     print "Error: unable to start thread"
-                result = detection(timestamp)
-                if result:
-                    a_time =  time.time()
+                try:
+                    thread = threading.Thread( target = detection, args = (timestamp, ) )
+                    thread.start()
+                except:
+                    print ("Error: unable to start thread")
+                # result = detection(timestamp)
+                # print('Anomaly at: ', timestamp)
+                # if result:
+                a_time =  time.time()
 
         # Trace data
         else:  # message.topic == 'trace'
+            # print(data)
             timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
 
-        esb_df = esb_df[(esb_df.startTime >= (timenow-1260000))]
-        host_df = host_df[(host_df.timestamp >= (timenow-1260000))]
-        trace_df = trace_df[(trace_df.startTime >= (timenow-1260000))]
+        trace_df = trace_df[(trace_df.startTime >= (timenow-660000))]
+        esb_df = esb_df[(esb_df.startTime >= (timenow-660000))]
+        host_df = host_df[(host_df.timestamp >= (timenow-660000))]
+
 
         # print(esb_df.tail())
         # print(host_df.tail())
