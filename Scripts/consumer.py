@@ -16,10 +16,10 @@ import networkx as nx
 from sklearn import preprocessing
 from sklearn.cluster import Birch
 from sklearn.neighbors import KernelDensity
-import thread
+import threading
 
 class MicroRCA():
-    def __init__(self, esb_data, trace_data = None, host_data = None, alpha = 0.55, take_minute_averages_of_trace_data = True, division_milliseconds = 60000):
+    def __init__(self, esb_data = None, trace_data = None, host_data = None, alpha = 0.55, take_minute_averages_of_trace_data = True, division_milliseconds = 60000):
         self.esb_data = esb_data
         self.trace_data = trace_data
         self.host_data = host_data
@@ -317,33 +317,16 @@ class MicroRCA():
             if row['id'] in csf_cmdb:
                 self.trace_data.at[index, 'cmdb_id'] = csf_cmdb[row['id']]
 
-        elapsed_time = {}
-        children = {}
         parent_service = {}
         for index, row in self.trace_data.iterrows():
-            if row['pid'] != 'None':
-                if row['pid'] in children.keys():
-                    children[row['pid']].append(row['id'])
-                else:
-                    children[row['pid']] = [row['id']]
-            elapsed_time [row['id']] = float(row['elapsedTime'])
             parent_service[row['id']] = row['serviceName']
 
-        # self.trace_data['actual_time'] = 0.0
         self.trace_data['path'] = ''
         for index, row in self.trace_data.iterrows():
-            total_child = 0.0
             if row['pid'] not in parent_service.keys():
                 self.trace_data.at[index, 'path'] = 'Start-' + row['serviceName']
             else:
                 self.trace_data.at[index, 'path'] = parent_service[row['pid']] + '-' + row['serviceName']
-
-            # if row['id'] not in children.keys():
-            #     self.trace_data.at[index, 'actual_time'] = row['elapsedTime']
-            #     continue
-            # for child in children[row['id']]:
-            #     total_child += elapsed_time[child]
-            # self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
         
         print("Trace processed")
 
@@ -381,16 +364,14 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 
 def detection(timestamp):
     print('Starting Anomaly Detection')
-    startTime = timestamp - 180000  # one minute before anomaly
+    startTime = timestamp - 1200000  # one minute before anomaly
 
-    esb_df_temp = esb_df[(esb_df['startTime'] >= startTime) &
-                         (esb_df['startTime'] <= timestamp)]
     trace_df_temp = trace_df[(trace_df['startTime'] >= startTime) &
                              (trace_df['startTime'] <= timestamp)]
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
                            (host_df['timestamp'] <= timestamp)]
 
-    rca_temp = MicroRCA(esb_df_temp, trace_df_temp, host_df_temp)
+    rca_temp = MicroRCA(trace_data=trace_df_temp, host_data=host_df_temp)
     results_to_send_off = rca_temp.run()
 
     print('Anomaly Detection Done.')
@@ -436,7 +417,7 @@ def main():
     trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
                                      'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
 
-    rca = MicroRCA(esb_df)
+    rca = MicroRCA(esb_data=esb_df)
     esb_anomaly = False
     
     a_time = 0.0
@@ -453,16 +434,17 @@ def main():
         # ESB data
         elif message.topic == 'business-index':
             timenow = data['startTime']
-            timestamp = data['startTime']
 
             for item in data['body']['esb']:
                 esb_df = esb_df.append(item, ignore_index=True)
                 esb_anomaly = rca.analyze_esb(item)
 
             if time.time() - a_time >= 600 and esb_anomaly:
+                timestamp = data['startTime']
                 print("oops")
                 # try:
-                #     thread = thread.start_new_thread( detection, (timestamp, ) )
+                #     thread = threading.Thread( target = detection, args = (timestamp, ) )
+                #     thread.start()
                 # except:
                 #     print "Error: unable to start thread"
                 result = detection(timestamp)
@@ -474,9 +456,9 @@ def main():
             timenow = data['startTime']
             trace_df = trace_df.append(Trace(data), ignore_index=True)
         
-        esb_df = esb_df[esb_df.startTime >= timenow-600000]
-        host_df = host_df[host_df.timestamp >= timenow-600000]
-        trace_df = trace_df[trace_df.startTime >= timenow-600000]
+        esb_df = esb_df[esb_df.startTime >= timenow-1260000]
+        host_df = host_df[host_df.timestamp >= timenow-1260000]
+        trace_df = trace_df[trace_df.startTime >= timenow-1260000]
 
 
 if __name__ == '__main__':
