@@ -366,8 +366,9 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 
 
 def detection(timestamp):
+    global host_df, trace_df
     print('Starting Anomaly Detection')
-    startTime = timestamp - 600000  # one minute before anomaly
+    startTime = timestamp - 300000  # one minute before anomaly
 
     print(len(trace_df), trace_df.head())
     print(len(host_df), host_df.head())
@@ -393,6 +394,42 @@ def detection(timestamp):
     submit(results_to_send_off)
     return True
 
+def rcaprocess(esb_item, trace, host, timestamp):
+    global host_df, trace_df, rca, a_time
+    esb_anomaly = False
+
+    # print(trace)
+    trace_df = trace_df[(trace_df.startTime >= (timestamp-480000))]
+    host_df = host_df[(host_df.timestamp >= (timestamp-480000))]
+
+    esb_anomaly = rca.analyze_esb(esb_item)
+
+    t = time.time()
+    t_df = pd.DataFrame(trace)
+    h_df = pd.DataFrame(host)
+
+    trace_df = pd.concat([trace_df,t_df], axis=0, ignore_index=True)
+    host_df = pd.concat([host_df,h_df], axis=0, ignore_index=True)
+
+    print('Time to add new data: ', (time.time()-t))
+    # for item in trace:
+    #     trace_df = trace_df.append(item, ignore_index=True)
+    # for item in host:
+    #     host_df = host_df.append(item, ignore_index=True)
+
+    print(rca.esb_data.tail(1))
+    print(host_df.tail(1))
+    print(trace_df.tail(1))
+
+    if (time.time() - a_time) >= 600 and esb_anomaly:
+        tmp_time = time.time()
+        print("oops")
+        # detection(timestamp)
+        result = detection(timestamp)
+        print('Anomaly at: ', timestamp)
+        if result:
+            a_time = tmp_time
+
 
 def submit(ctx):
     '''Submit answer into stdout'''
@@ -407,68 +444,70 @@ def submit(ctx):
     r = requests.post(
         'http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
+    
+esb_df = pd.DataFrame(columns=['serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+host_df = pd.DataFrame(columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+rca = MicroRCA(esb_data=esb_df)
+a_time = 0.0
 
 def main():
     '''Consume data and react'''
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-    global esb_df, host_df, trace_df
+    global esb_df, host_df, trace_df, rca, a_time
+    
+    esb_df = pd.DataFrame(columns=['serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+    host_df = pd.DataFrame(columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+    trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+    rca = MicroRCA(esb_data=esb_df)
+    a_time = 0.0
 
     print('Started receiving data! Fingers crossed...')
 
     # Dataframes for the three different datasets
-    esb_df = pd.DataFrame(columns=[
-                          'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
-    host_df = pd.DataFrame(
-        columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-    trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-                                     'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
 
-    rca = MicroRCA(esb_data=esb_df)
-    esb_anomaly = False
-    
-    a_time = 0.0
+    esb_list = []
+    trace_list = []
+    host_list = []
+
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
 
         # Host data
         if message.topic == 'platform-index':
-            timenow = data['timestamp']
             for stack in data['body']:
                 for item in data['body'][stack]:
-                    host_df = host_df.append(item, ignore_index=True)
+                    # host_df = host_df.append(item, ignore_index=True)
+                    host_list.append(item)
 
         # ESB data
         elif message.topic == 'business-index':
-            timenow = data['startTime']
+            timestamp = data['startTime']
 
             for item in data['body']['esb']:
-                esb_df = esb_df.append(item, ignore_index=True)
-                esb_anomaly = rca.analyze_esb(item)
-                # print(item)
+                esb_list.append(item)
+                # esb_df = esb_df.append(item, ignore_index=True)
+                # esb_anomaly = rca.analyze_esb(item)
 
-            if time.time() - a_time >= 600 and esb_anomaly:
-                timestamp = data['startTime']
-                print("oops")
-                try:
-                    thread = threading.Thread( target = detection, args = (timestamp, ) )
-                    thread.start()
-                except:
-                    print ("Error: unable to start thread")
-                # result = detection(timestamp)
-                # print('Anomaly at: ', timestamp)
-                # if result:
-                a_time =  time.time()
+                # print(item)
+            
+            try:
+                threading.Thread( target = rcaprocess, args = (esb_list, trace_list, host_list, timestamp) ).start()
+            except:
+                print ("Error: unable to start rcaprocess")
+            
+            esb_list = []
+            trace_list = []
+            host_list = []
+
 
         # Trace data
         else:  # message.topic == 'trace'
             # print(data)
-            timenow = data['startTime']
-            trace_df = trace_df.append(Trace(data), ignore_index=True)
+            trace_list.append(Trace(data))
+            # trace_df = trace_df.append(Trace(data), ignore_index=True)
 
-        trace_df = trace_df[(trace_df.startTime >= (timenow-660000))]
-        esb_df = esb_df[(esb_df.startTime >= (timenow-660000))]
-        host_df = host_df[(host_df.timestamp >= (timenow-660000))]
 
 
         # print(esb_df.tail())
