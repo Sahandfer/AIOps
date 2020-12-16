@@ -59,29 +59,31 @@ def find_anomalous_kpi(cmdb_id):
     else:
         kpi_names = db_kpi_names
 
-    host_data_subset = host_data[host_data['cmdb_id']==cmdb_id][['name', 'value']]
-    KPI = 'fakin nooothan'
-    max_so_far = 0
-    for _kpi, values in host_data_subset.groupby('name')['value']:
-        if _kpi in kpi_names:
-            values = list(values)
-            is_anomalous, labels = do_birch(values, 0.02)
-            if is_anomalous:
-                score = sum(labels!=0)/len(labels)
-                if score > max_so_far:
-                    max_so_far = score
-                    KPI = _kpi
+    return kpi_names
 
-    if KPI == 'fakin nooothan':
-        return None
-    elif KPI == 'container_cpu_used':
-        return KPI 
-    elif KPI in ['Sent_queue', 'Received_queue']:
-        return 'Sent_queue;Received_queue'
-    elif KPI in ['Proc_User_Used_Pct','Proc_Used_Pct','Sess_Connect']:
-        return 'Proc_User_Used_Pct;Proc_Used_Pct;Sess_Connect'
-    elif KPI in ['On_Off_State', 'tnsping_result_time']:
-        return 'On_Off_State;tnsping_result_time'
+    # host_data_subset = host_data[host_data['cmdb_id']==cmdb_id][['name', 'value']]
+    # KPI = 'fakin nooothan'
+    # max_so_far = 0
+    # for _kpi, values in host_data_subset.groupby('name')['value']:
+    #     if _kpi in kpi_names:
+    #         values = list(values)
+    #         is_anomalous, labels = do_birch(values, 0.02)
+    #         if is_anomalous:
+    #             score = sum(labels!=0)/len(labels)
+    #             if score > max_so_far:
+    #                 max_so_far = score
+    #                 KPI = _kpi
+
+    # if KPI == 'fakin nooothan':
+    #     return None
+    # elif KPI == 'container_cpu_used':
+    #     return KPI 
+    # elif KPI in ['Sent_queue', 'Received_queue']:
+    #     return 'Sent_queue;Received_queue'
+    # elif KPI in ['Proc_User_Used_Pct','Proc_Used_Pct','Sess_Connect']:
+    #     return 'Proc_User_Used_Pct;Proc_Used_Pct;Sess_Connect'
+    # elif KPI in ['On_Off_State', 'tnsping_result_time']:
+    #     return 'On_Off_State;tnsping_result_time'
 
 
 def localize(dodgy_rows, just_rows):
@@ -89,8 +91,11 @@ def localize(dodgy_rows, just_rows):
     if n < 1:
         return [[]]
     if n == 1:
-        KPI = find_anomalous_kpi(just_rows[0])
-        return [[just_rows[0], KPI]]
+        KPIs = find_anomalous_kpi(just_rows[0])
+        to_be_sent = []
+        for KPI in KPIs:
+            to_be_sent.append([just_rows[0], KPI])
+        return to_be_sent
     if n ==2:
         r0 = just_rows[0]
         r1 = just_rows[1]
@@ -102,9 +107,14 @@ def localize(dodgy_rows, just_rows):
                 KPI = find_anomalous_kpi(docker_lookup_table[r0])
                 return [[docker_lookup_table[r0], KPI]]
         else:
-            KPI0 = find_anomalous_kpi(r0)
-            KPI1 = find_anomalous_kpi(r1)
-            return [[r0, KPI0],[r1, KPI1]]
+            KPI0s = find_anomalous_kpi(r0)
+            KPI1s = find_anomalous_kpi(r1)
+            to_be_sent = []
+            for kpi in KPI0s:
+                to_be_sent.append([r0, kpi])
+            for kpi in KPI1s:
+                to_be_sent.append([r1, kpi])
+            return to_be_sent
     if n > 2:
         dodgy_rows.sort(key = lambda x: x[2], reverse = True)
         just_rows = [x[0] for x in dodgy_rows]
