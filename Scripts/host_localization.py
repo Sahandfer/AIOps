@@ -7,7 +7,7 @@ dockers = ['docker_001', 'docker_002', 'docker_003', 'docker_004',
            'docker_005', 'docker_006', 'docker_007', 'docker_008']
 docker_hosts = ['os_017', 'os_018', 'os_019', 'os_020']
 
-docker_kpi_names = ['container_cpu_used', 'Sent_queue', 'Received_queue']
+docker_kpi_names = ['container_cpu_used', None]
 os_kpi_names = ['Sent_queue', 'Received_queue']
 db_kpi_names = ['Proc_User_Used_Pct','Proc_Used_Pct','Sess_Connect','On_Off_State', 'tnsping_result_time']
 
