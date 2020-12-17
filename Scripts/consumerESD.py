@@ -174,6 +174,7 @@ class RCA():
         threshold = max( 0.5 * table.stack().max(), min_threshold)
         dodgy_rows = []
         just_rows = []
+        row_col_dict = {}
         for column in table:
             v = 0
             r = ''
@@ -182,6 +183,7 @@ class RCA():
                     if index == column:
                         dodgy_rows.append([index, row[column]])
                         just_rows.append(index)
+                        row_col_dict[index] = True
                         break
                     elif (row[column] > v):
                         v = row[column]
@@ -189,29 +191,31 @@ class RCA():
             if r != '':
                 dodgy_rows.append([r, column, v])
                 just_rows.append(r)
+                if r not in row_col_dict.keys():
+                    row_col_dict[r] = False
         
-        output = self.localize(dodgy_rows, list(set(just_rows)))
+        output = self.localize(dodgy_rows, list(set(just_rows)), row_col_dict)
         return output
 
 
-    def find_anomalous_kpi(self, cmdb_id):
+    def find_anomalous_kpi(self, cmdb_id, row_col_same = False):
         kpi_names = []
         if 'os' in cmdb_id:
             kpi_names = self.os_kpi_names
         elif 'docker' in cmdb_id:
-            kpi_names = self.docker_kpi_names
+            kpi_names = self.docker_kpi_names[0] if row_col_same else self.docker_kpi_names[1]
         else:
             kpi_names = self.db_kpi_names
 
         return kpi_names
 
 
-    def localize(self, dodgy_rows, just_rows):
+    def localize(self, dodgy_rows, just_rows, row_col_dict):
         n = len(just_rows)
         if n < 1:
             return None
         if n == 1:
-            KPIs = self.find_anomalous_kpi(just_rows[0])
+            KPIs = self.find_anomalous_kpi(just_rows[0], row_col_dict[row_col_dict.keys()[0]])
             to_be_sent = []
             for KPI in KPIs:
                 to_be_sent.append([just_rows[0], KPI])
@@ -223,7 +227,7 @@ class RCA():
                 KPIS = self.find_anomalous_kpi('os_001')
                 return [['os_001', KPIS[0]], ['os_001', KPIS[1]]]
 
-            elif ('docker' in r0) and ('docker' in r1):
+            if ('docker' in r0) and ('docker' in r1):
                 if self.docker_lookup_table[r0] == self.docker_lookup_table[r1]:
                     KPIS = self.find_anomalous_kpi(self.docker_lookup_table[r0])
                     to_be_sent = []
@@ -231,15 +235,14 @@ class RCA():
                         to_be_sent.append([self.docker_lookup_table[r0], kpi])
                     return to_be_sent
 
-            else:
-                KPI0s = self.find_anomalous_kpi(r0)
-                KPI1s = self.find_anomalous_kpi(r1)
-                to_be_sent = []
-                for kpi in KPI0s:
-                    to_be_sent.append([r0, kpi])
-                for kpi in KPI1s:
-                    to_be_sent.append([r1, kpi])
-                return to_be_sent
+            KPI0s = self.find_anomalous_kpi(r0, row_col_dict[r0])
+            KPI1s = self.find_anomalous_kpi(r1, row_col_dict[r1])
+            to_be_sent = []
+            for kpi in KPI0s:
+                to_be_sent.append([r0, kpi])
+            for kpi in KPI1s:
+                to_be_sent.append([r1, kpi])
+            return to_be_sent
         if n > 2:
             dodgy_rows.sort(key = lambda x: x[2], reverse = True)
             just_rows = [x[0] for x in dodgy_rows]
