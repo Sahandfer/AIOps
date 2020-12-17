@@ -220,12 +220,17 @@ class RCA():
             r0 = just_rows[0]
             r1 = just_rows[1]
             if ('os' in r0) and ('os' in r1):
-                KPI = self.find_anomalous_kpi('os_001')
-                return [['os_001', KPI]]
+                KPIS = self.find_anomalous_kpi('os_001')
+                return [['os_001', KPIS[0]], ['os_001', KPIS[1]]]
+
             elif ('docker' in r0) and ('docker' in r1):
                 if self.docker_lookup_table[r0] == self.docker_lookup_table[r1]:
-                    KPI = self.find_anomalous_kpi(self.docker_lookup_table[r0])
-                    return [[self.docker_lookup_table[r0], KPI]]
+                    KPIS = self.find_anomalous_kpi(self.docker_lookup_table[r0])
+                    to_be_sent = []
+                    for kpi in KPIS:
+                        to_be_sent.append([self.docker_lookup_table[r0], kpi])
+                    return to_be_sent
+                    
             else:
                 KPI0s = self.find_anomalous_kpi(r0)
                 KPI1s = self.find_anomalous_kpi(r1)
