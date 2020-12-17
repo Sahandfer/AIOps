@@ -168,7 +168,6 @@ class RCA():
             self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
 
 
-
     def find_anomalous_rows(self, min_threshold = 5):
         table = self.anomaly_chart.copy()
         threshold = max( 0.5 * table.stack().max(), min_threshold)
@@ -230,7 +229,7 @@ class RCA():
                     for kpi in KPIS:
                         to_be_sent.append([self.docker_lookup_table[r0], kpi])
                     return to_be_sent
-                    
+
             else:
                 KPI0s = self.find_anomalous_kpi(r0)
                 KPI1s = self.find_anomalous_kpi(r1)
@@ -256,6 +255,7 @@ class RCA():
     def trace_processing(self):
         print("Started trace processing")
         p_time = time.time()
+        self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote']
         df1 = self.trace_data[self.trace_data['callType']=='RemoteProcess']
         df1 = df1[['pid','cmdb_id']]
         df1 = df1.set_index('pid')
@@ -286,6 +286,8 @@ class RCA():
             for child in children[row['id']]:
                 total_child += elapse_time[child]
             self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
+        
+        self.trace_data = self.trace_data[self.trace_data['serviceName'].str.contains('csf')]
 
         print("Trace processed in ", time.time()-p_time, 'seconds')
         print(self.trace_data)
