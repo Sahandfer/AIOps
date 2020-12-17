@@ -152,6 +152,7 @@ class RCA():
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
         print(self.anomaly_chart)
+        print(self.anomaly_chart.to_dict())
         return self.anomaly_chart
     
     def local_initiate(self):
@@ -332,8 +333,8 @@ def detection(timestamp):
     print('Starting Anomaly Detection')
     startTime = timestamp - 1200000  # one minute before anomaly
 
-    print(len(trace_df), trace_df.head())
-    print(len(host_df), host_df.head())
+    # print(len(trace_df), trace_df.head())
+    # print(len(host_df), host_df.head())
     trace_df_temp = trace_df[(trace_df['startTime'] >= startTime) &
                              (trace_df['startTime'] <= timestamp)]
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
@@ -471,7 +472,7 @@ if __name__ == '__main__':
 
     '''
         Bellow are for testing purposes
-    '''
+    # '''
     
     # global host_df, trace_df
 
