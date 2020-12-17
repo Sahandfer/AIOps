@@ -287,7 +287,7 @@ class RCA():
                 total_child += elapse_time[child]
             self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
         
-        self.trace_data = self.trace_data[self.trace_data['serviceName'].str.contains('csf')]
+        self.trace_data = self.trace_data[~(self.trace_data['serviceName'].str.contains('csf'))]
 
         print("Trace processed in ", time.time()-p_time, 'seconds')
         print(self.trace_data)
