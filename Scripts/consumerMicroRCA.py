@@ -481,8 +481,7 @@ def submit(ctx):
         assert(isinstance(tp[0], str))
         assert(isinstance(tp[1], str) or (tp[1] is None))
     data = {'content': json.dumps(ctx)}
-    r = requests.post(
-        'http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
+    r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
 
 esb_df = pd.DataFrame(columns=[

@@ -7,7 +7,7 @@ Example for RCAing like a B0$$
 import requests
 import json
 
-# from kafka import KafkaConsumer
+from kafka import KafkaConsumer
 
 import pickle
 import time
@@ -86,14 +86,15 @@ class RCA():
         self.hesd_trace_detection(alpha=self.alpha, ub=self.ub)
         print('Score chart computed!')
 
-        # output = self.kpi_localization()
-        
-        # print('The output to send to the server is: ' +
-        #       colored(str(output), 'magenta'))
+        self.local_initiate()
+        output = self.find_anomalous_rows()
 
-        # print('RCA finished in ' + colored('%f', 'cyan') %
-        #       (time.time() - overall_start_time) + ' seconds.')
-        # return output
+        print('The output to send to the server is: ' +
+              colored(str(output), 'magenta'))
+
+        print('RCA finished in ' + colored('%f', 'cyan') %
+              (time.time() - overall_start_time) + ' seconds.')
+        return output
 
     def esd_test_statistics(self, x, hybrid=True):
         """
@@ -142,16 +143,104 @@ class RCA():
     def hesd_trace_detection(self, alpha=0.95, ub=0.02):
         grouped_df = self.trace_data.groupby(['cmdb_id', 'serviceName'])[['startTime','actual_time']]
 
-        anomaly_chart = pd.DataFrame()
+        self.anomaly_chart = pd.DataFrame()
         for (a, b), value in grouped_df:
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['actual_time'].mean().reset_index()
             result = self.esd_test(value['actual_time'].to_numpy(), alpha=alpha, ub=ub, hybrid=True)
-            anomaly_chart.loc[b,a] = result
+            self.anomaly_chart.loc[b,a] = result
 
-        self.anomaly_chart = anomaly_chart.sort_index(inplace=True)
-        print(anomaly_chart)
-        return anomaly_chart
+        self.anomaly_chart = self.anomaly_chart.sort_index()
+        print(self.anomaly_chart)
+        return self.anomaly_chart
+    
+    def local_initiate(self):
+        self.dockers = ['docker_001', 'docker_002', 'docker_003', 'docker_004',
+                'docker_005', 'docker_006', 'docker_007', 'docker_008']
+        self.docker_hosts = ['os_017', 'os_018', 'os_019', 'os_020']
+
+        self.docker_kpi_names = ['container_cpu_used', None]
+        self.os_kpi_names = ['Sent_queue', 'Received_queue']
+        self.db_kpi_names = ['Proc_User_Used_Pct','Proc_Used_Pct','Sess_Connect','On_Off_State', 'tnsping_result_time']
+
+        self.docker_lookup_table = {}
+        for i in range(len(self.dockers)):
+            self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
+
+
+
+    def find_anomalous_rows(self, min_threshold = 5):
+        table = self.anomaly_chart.copy()
+        threshold = max( 0.5 * table.stack().max(), min_threshold)
+        dodgy_rows = []
+        just_rows = []
+        for column in table:
+            v = 0
+            r = ''
+            for index, row in table.iterrows():
+                if (row[column] > threshold):
+                    if index == column:
+                        dodgy_rows.append([index, row[column]])
+                        just_rows.append(index)
+                        break
+                    elif (row[column] > v):
+                        v = row[column]
+                        r = index
+            if r != '':
+                dodgy_rows.append([r, column, v])
+                just_rows.append(r)
+        
+        output = self.localize(dodgy_rows, list(set(just_rows)))
+        return output
+
+
+    def find_anomalous_kpi(self, cmdb_id):
+        kpi_names = []
+        if 'os' in cmdb_id:
+            kpi_names = self.os_kpi_names
+        elif 'docker' in cmdb_id:
+            kpi_names = self.docker_kpi_names
+        else:
+            kpi_names = self.db_kpi_names
+
+        return kpi_names
+
+
+    def localize(self, dodgy_rows, just_rows):
+        n = len(just_rows)
+        if n < 1:
+            return None
+        if n == 1:
+            KPIs = self.find_anomalous_kpi(just_rows[0])
+            to_be_sent = []
+            for KPI in KPIs:
+                to_be_sent.append([just_rows[0], KPI])
+            return to_be_sent
+        if n == 2:
+            r0 = just_rows[0]
+            r1 = just_rows[1]
+            if ('os' in r0) and ('os' in r1):
+                KPI = self.find_anomalous_kpi('os_001')
+                return [['os_001', KPI]]
+            elif ('docker' in r0) and ('docker' in r1):
+                if self.docker_lookup_table[r0] == self.docker_lookup_table[r1]:
+                    KPI = self.find_anomalous_kpi(self.docker_lookup_table[r0])
+                    return [[self.docker_lookup_table[r0], KPI]]
+            else:
+                KPI0s = self.find_anomalous_kpi(r0)
+                KPI1s = self.find_anomalous_kpi(r1)
+                to_be_sent = []
+                for kpi in KPI0s:
+                    to_be_sent.append([r0, kpi])
+                for kpi in KPI1s:
+                    to_be_sent.append([r1, kpi])
+                return to_be_sent
+        if n > 2:
+            dodgy_rows.sort(key = lambda x: x[2], reverse = True)
+            just_rows = [x[0] for x in dodgy_rows]
+            just_rows = list(set(just_rows))
+            return self.localize(dodgy_rows[:2], just_rows[:2])
+
 
     def update_trace_data(self, trace_data):
         self.trace_data = trace_data
@@ -199,12 +288,12 @@ class RCA():
 
 # Three topics are available: platform-index, business-index, trace.
 # Subscribe at least one of them.
-# AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
-# CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
-#                          bootstrap_servers=['172.21.0.8', ],
-#                          auto_offset_reset='latest',
-#                          enable_auto_commit=False,
-#                          security_protocol='PLAINTEXT')
+AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
+CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
+                         bootstrap_servers=['172.21.0.8', ],
+                         auto_offset_reset='latest',
+                         enable_auto_commit=False,
+                         security_protocol='PLAINTEXT')
 
 
 class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-few-public-methods
@@ -215,12 +304,15 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 
     def __new__(self, data):
         self.trace = data
-        if self.trace['callType'] == 'JDBC':
+        if self.trace['callType'] == 'JDBC' or self.trace['callType']=='LOCAL':
             try:
                 self.trace['serviceName'] = data['dsName']
             except:
                 print(data)
                 print('JDBC doesnt have dsName')
+        
+        elif self.trace['callType']=='RemoteProcess' or self.trace['callType']=='OSB':
+            self.trace['serviceName'] = data['cmdb_id']
 
         if 'dsName' in self.trace:
             self.trace.pop('dsName')
@@ -246,7 +338,7 @@ def detection(timestamp):
     results_to_send_off = rca_temp.run()
 
     print('Anomaly Detection Done.')
-    if len(results_to_send_off) == 0:
+    if results_to_send_off is None:
         # print('Nothing detected')
         return False
     # for a in anom_hosts:
@@ -301,18 +393,17 @@ def submit(ctx):
         assert(isinstance(tp[0], str))
         assert(isinstance(tp[1], str) or (tp[1] is None))
     data = {'content': json.dumps(ctx)}
-    r = requests.post(
-        'http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
+    r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
 
-# esb_df = pd.DataFrame(columns=[
-#                       'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
-# host_df = pd.DataFrame(
-#     columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-# trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-#                                  'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-# esb_anal = ESB_Analyzer(esb_df)
-# a_time = 0.0
+esb_df = pd.DataFrame(columns=[
+                      'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+host_df = pd.DataFrame(
+    columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+esb_anal = ESB_Analyzer(esb_df)
+a_time = 0.0
 
 
 def main():
@@ -369,27 +460,27 @@ def main():
             trace_list.append(Trace(data))
 
 if __name__ == '__main__':
-    # main()
+    main()
 
     '''
         Bellow are for testing purposes
     '''
     
-    global host_df, trace_df
+    # global host_df, trace_df
 
-    path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\'
-    trace_df = pd.read_csv(path + 'trace_5_26.csv')
-    trace_df = trace_df.drop(['actual_time','path'], axis=1)
-    trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
-    # trace = trace[trace.startTime < trace.startTime[0]+1260000]
+    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\'
+    # trace_df = pd.read_csv(path + 'trace_5_26.csv')
+    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
+    # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
+    # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path + 'kpi_data_526.csv')
-    host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
+    # host_df = pd.read_csv(path + 'kpi_data_526.csv')
+    # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
-    # print(trace_df)
-    print(host_df)
-    timestamp = int(host_df['timestamp'].iloc[-1]-180000)
-    print(timestamp)
-    host_df = host_df[(host_df.timestamp >= (timestamp-1260000))]
-    print(host_df)
-    detection(timestamp)
+    # # print(trace_df)
+    # print(host_df)
+    # timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    # print(timestamp)
+    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
+    # print(host_df)
+    # detection(timestamp)
