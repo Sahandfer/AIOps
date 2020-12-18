@@ -4,12 +4,15 @@
 '''
 Example for RCAing like a B0$$
 '''
+import networkx as nx
 import requests
 import json
 import statistics
 # from kafka import KafkaConsumer
+import itertools
 import operator
 import pickle
+import matplotlib.pyplot as plt
 import time
 import numpy as np
 import pandas as pd
@@ -156,6 +159,30 @@ class RCA():
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
         print(self.anomaly_chart)
+
+        # dg = nx.DiGraph()
+        # for col in self.anomaly_chart:
+        #     for index, row in self.anomaly_chart.iterrows():
+        #         if str(row[col]) != 'nan':
+        #             dg.add_edge(col, index)
+
+        # positions = {}
+        # positions['os_022'] = (1,4)
+        # positions['os_021'] = (4,4)
+        # positions['docker_002'] = (0.5,3)
+        # positions['docker_001'] = (1.5,3)
+        # positions['docker_003'] = (3.5,3)
+        # positions['docker_004'] = (4.5,3)
+        # positions['docker_005'] = (5,2)
+        # positions['docker_006'] = (4,2)
+        # positions['docker_007'] = (0,2)
+        # positions['docker_008'] = (1,2)
+        # positions['db_007'] = (2,2)
+        # positions['db_009'] = (3,2)
+        # positions['db_003'] = (2.5,1)
+        # nx.draw_networkx(dg, positions, node_size = 5500, node_color = '#00BFFF')
+        # plt.show()
+
         # print(self.anomaly_chart.to_dict())
         return self.anomaly_chart
     
@@ -253,8 +280,8 @@ class RCA():
             if (yhat[i] == -1) and (vals[i]>=med):
                 output.append(final_rows[vals[i]])
         
-        output = self.localize(output, row_col_dict)
-        return output
+        final_output = self.localize(output, row_col_dict)
+        return final_output
 
 
     def find_anomalous_kpi(self, cmdb_id, row_col_same = False):
@@ -284,6 +311,7 @@ class RCA():
 
 
     def localize(self, output, row_col_dict):
+        print(output)
         n = len(output)
         print('%d anomalies found' % n)
         if n < 1:
@@ -295,34 +323,27 @@ class RCA():
                 to_be_sent.append([output[0], KPI])
             return to_be_sent
         if n >= 2:
-            r0 = output[0]
-            r1 = output[1]
-            if ('os' in r0) and ('os' in r1):
+            to_be_sent = []
+            os = [x for x in output if 'os' in x]
+            docker = [y for y in output if 'docker' in y]
+
+            if len(os)==2:
                 KPIS = self.find_anomalous_kpi('os_001')
                 return [['os_001', KPIS[0]], ['os_001', KPIS[1]]]
 
-            if ('docker' in r0) and ('docker' in r1):
-                if self.docker_lookup_table[r0] == self.docker_lookup_table[r1]:
-                    KPIS = self.find_anomalous_kpi(self.docker_lookup_table[r0])
-                    to_be_sent = []
-                    for kpi in KPIS:
-                        to_be_sent.append([self.docker_lookup_table[r0], kpi])
-                    return to_be_sent
+            if len(docker) >= 2:
+                c = list(itertools.combinations(docker))
+                for a, b in c:
+                    if self.docker_lookup_table[a] == self.docker_lookup_table[b]:
+                        KPIS = self.find_anomalous_kpi(self.docker_lookup_table[a])
+                        for kpi in KPIS:
+                            to_be_sent.append([self.docker_lookup_table[a], kpi])
+                        return to_be_sent
 
-            KPI0s = self.find_anomalous_kpi(r0, row_col_dict[r0])
-            KPI1s = self.find_anomalous_kpi(r1, row_col_dict[r1])
-            to_be_sent = []
-            for kpi in KPI0s:
-                to_be_sent.append([r0, kpi])
-            for kpi in KPI1s:
-                to_be_sent.append([r1, kpi])
+            KPIs = self.find_anomalous_kpi(output[0], row_col_dict[output[0]])
+            for kpi in KPIs:
+                to_be_sent.append([output[0], kpi])
             return to_be_sent
-        # if n > 2:
-        #     dodgy_rows.sort(key = lambda x: x[2], reverse = True)
-        #     just_rows = [x[0] for x in dodgy_rows]
-        #     just_rows = list(np.unique(just_rows))
-        #     row_col_dict = { just_rows[0]: row_col_dict[just_rows[0]], just_rows[1]: row_col_dict[just_rows[1]] } 
-        #     return self.localize(dodgy_rows[:2], just_rows[:2], row_col_dict)
 
 
     def update_trace_data(self, trace_data):
@@ -415,6 +436,8 @@ def detection(timestamp):
                            (host_df['timestamp'] <= timestamp)]
     # print(len(trace_df_temp), trace_df_temp.head())
     # print(len(host_df_temp), host_df_temp.head())
+    if (len(trace_df_temp) == 0) or (len(host_df_temp) == 0):
+        print('Error: empty dataframe')
 
     rca_temp = RCA(trace_data=trace_df_temp, host_data=host_df_temp)
     results_to_send_off = rca_temp.run()
@@ -550,20 +573,22 @@ if __name__ == '__main__':
     
     global host_df, trace_df
 
-    path= 'training_data/'
-    # path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv('trace526209_docker008.csv')
+    # path= 'training_data/'
+    path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
+    trace_df = pd.read_csv(path+'trace_526339_db007_onoff.csv')
     # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.drop(['path'], axis=1)
     trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv('kpi_data_526_docker_008.csv')
+    host_df = pd.read_csv(path+'kpi_data_527_db007_onoff.csv')
     host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # print(trace_df)
     # print(host_df)
-    timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    timestamp = int(trace_df['startTime'].iloc[-1]-180000)
+    
+    # print(timestamp)
     # print(timestamp)
     # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
     # print(host_df)
