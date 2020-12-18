@@ -192,7 +192,7 @@ class RCA():
             
         secondary = values[thresh_idx:-1]
         med = statistics.median(secondary)
-        threshold = statistics.median([abs(x-med) for x in secondary])+secondary[0]
+        threshold = statistics.median([abs(x-med) for x in secondary])
         
         return threshold
 
@@ -203,19 +203,26 @@ class RCA():
         row_col_dict = {}
         column_dict= {}
         row_dict = {}
+        confidence_col = {}
+        confidence_row = {}
 
         for column in table:
             for index, row in table.iterrows():
                 if (str(row[column]) != 'nan'):
+                    increment = 1 if (row[column] >= threshold) else 0
                     if (column in column_dict.keys()):
-                        column_dict[column]= (column_dict[column]+ row[column])/2
+                        column_dict[column] += increment
+                        confidence_col[column].append(row[column])
                     else:
-                        column_dict[column]= row[column]
+                        column_dict[column] = increment
+                        confidence_col[column] = [row[column]]
 
                     if (index in row_dict.keys()):
-                        row_dict[index]= (column_dict[column]+ row[column])/2
+                        row_dict[index] += increment
+                        confidence_row[index].append(row[column])
                     else:
-                        row_dict[index]=row[column]
+                        row_dict[index] = increment
+                        confidence_row[index] = [row[column]]
 
                     if index == column:
                         row_col_dict[index] = True
@@ -223,19 +230,28 @@ class RCA():
                         if index not in row_col_dict.keys():
                             row_col_dict[index] = False
         
+        for key, value in confidence_col.items():
+            confidence_col[key] = statistics.mean(value)
+            
+        for key, value in confidence_row.items():
+            confidence_row[key] = statistics.mean(value)
+            
+            
+        final_dict = {}
         for key in row_dict.keys():
             if (key in column_dict.keys()):
                 row_dict[key] = (row_dict[key]+ column_dict[key]) //2
-              
-        # Sort based on values  
-        just_rows =  {v:k for k, v in sorted(row_dict.items(), key=operator.itemgetter(1),reverse=True)}
-        row_vals = list(just_rows.keys())
-        yhat_temp = self.isolation_forest(row_vals)
+                confidence_row[key] = (confidence_row[key] + confidence_col[key]) //2
+            final_dict[key] = row_dict[key] * confidence_row[key]
         
         output = []
-        for i in range(len(yhat_temp)):
-            if (yhat_temp[i] == -1):
-                output.append(just_rows[row_vals[i]])
+        final_rows =  {v:k for k, v in sorted(final_dict.items(), key=operator.itemgetter(1),reverse=True)}
+        vals = list(final_rows.keys())
+        med = statistics.median(vals)
+        yhat = self.isolation_forest(vals)
+        for i in range(len(yhat)):
+            if (yhat[i] == -1) and (vals[i]>=med):
+                output.append(final_rows[vals[i]])
         
         output = self.localize(output, row_col_dict)
         return output
@@ -534,14 +550,15 @@ if __name__ == '__main__':
     
     global host_df, trace_df
 
-    path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv(path + 'trace_data_os17.csv')
+    path= 'training_data/'
+    # path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
+    trace_df = pd.read_csv(path + 'trace_data_os17_new.csv')
     # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.drop(['path'], axis=1)
     trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path + 'kpi_data_os17.csv')
+    host_df = pd.read_csv(path + 'kpi_data_os17_new.csv')
     host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # print(trace_df)
