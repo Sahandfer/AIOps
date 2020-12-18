@@ -332,7 +332,7 @@ class RCA():
                 return [['os_001', KPIS[0]], ['os_001', KPIS[1]]]
 
             if len(docker) >= 2:
-                c = list(itertools.combinations(docker))
+                c = list(itertools.combinations(docker,2))
                 for a, b in c:
                     if self.docker_lookup_table[a] == self.docker_lookup_table[b]:
                         KPIS = self.find_anomalous_kpi(self.docker_lookup_table[a])
