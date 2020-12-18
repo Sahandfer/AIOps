@@ -224,7 +224,7 @@ class RCA():
                         row_dict[index] = increment
                         confidence_row[index] = [row[column]]
 
-                    if index == column:
+                    if (index == column) and increment == 1:
                         row_col_dict[index] = True
                     else:
                         if index not in row_col_dict.keys():
@@ -247,7 +247,7 @@ class RCA():
         output = []
         final_rows =  {v:k for k, v in sorted(final_dict.items(), key=operator.itemgetter(1),reverse=True)}
         vals = list(final_rows.keys())
-        med = statistics.median(vals)
+        med = statistics.mean(vals)
         yhat = self.isolation_forest(vals)
         for i in range(len(yhat)):
             if (yhat[i] == -1) and (vals[i]>=med):
@@ -289,7 +289,7 @@ class RCA():
         if n < 1:
             return None
         if n == 1:
-            KPIs = self.find_anomalous_kpi(output[0], row_col_dict[list(row_col_dict.keys())[0]])
+            KPIs = self.find_anomalous_kpi(output[0], row_col_dict[output[0]])
             to_be_sent = []
             for KPI in KPIs:
                 to_be_sent.append([output[0], KPI])
@@ -552,13 +552,13 @@ if __name__ == '__main__':
 
     path= 'training_data/'
     # path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv(path + 'trace_data_os17_new.csv')
+    trace_df = pd.read_csv('trace526209_docker008.csv')
     # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.drop(['path'], axis=1)
     trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path + 'kpi_data_os17_new.csv')
+    host_df = pd.read_csv('kpi_data_526_docker_008.csv')
     host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # print(trace_df)
