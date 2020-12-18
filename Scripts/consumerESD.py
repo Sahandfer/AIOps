@@ -282,8 +282,8 @@ class RCA():
         df1 = df1[['pid','cmdb_id']]
         df1 = df1.set_index('pid')
 
-        csf_cmdb = df1.to_dict()
-        csf_cmdb = {str(key):str(values) for key, values in csf_cmdb['cmdb_id'].items()}
+        # csf_cmdb = df1.to_dict()
+        # csf_cmdb = {str(key):str(values) for key, values in csf_cmdb['cmdb_id'].items()}
 
         # for index, row in self.trace_data.iterrows():
         #     if row['id'] in csf_cmdb:
@@ -294,8 +294,8 @@ class RCA():
 
         def do_thing(row):
             ## if change 297 and 298, gets different result??? loook into this plz
-            if row['id'] in csf_cmdb:
-                row['serviceName'] = csf_cmdb[row['id']]
+            if row['id'] in df1.index:
+                row['serviceName'] = df1.at[row['id'],'cmdb_id']
             if row['pid'] != 'None':
                 children[row['pid']] = children.get(row['pid'], [])
                 children[row['pid']].append(row['id'])
