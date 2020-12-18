@@ -94,6 +94,7 @@ class RCA():
 
         print('RCA finished in ' + colored('%f', 'cyan') %
               (time.time() - overall_start_time) + ' seconds.')
+
         return output
 
     def esd_test_statistics(self, x, hybrid=True):
@@ -124,23 +125,25 @@ class RCA():
             ub = 0.499
         k = max(int(np.floor(ub * nobs)), 1) # Maximum number of anomalies. At least 1 anomaly must be tested.
         #   res_tmp = ts_S_Md_decomposition(x)["residual"] # Residuals from time series decomposition
-            
+        # res_tmp = np.abs(x - np.median(x))
         # Carry out the esd test k times  
         res = np.ma.array(x, mask=False) # The "ma" structure allows masking of values to exclude the elements from any calculation
         anomalies = [] # returns the indices of the found anomalies
+        med = np.median(x)
         for i in range(1, k+1):
             location, dispersion = self.esd_test_statistics(res, hybrid) # Sample statistics
             tmp = np.abs(res - location) / dispersion
             idx = np.argmax(tmp) # Index of the test statistic
-            test_statistic = tmp[idx] 
+            test_statistic = tmp[idx]
             n = nobs - res.mask.sum() # sums  nonmasked values
             critical_value = (n - i) * t.ppf(alpha, n - i - 1) / np.sqrt((n - i - 1 + np.power(t.ppf(alpha, n - i - 1), 2)) * (n - i - 1)) 
             if test_statistic > critical_value:
-                anomalies.append(test_statistic)
+                anomalies.append((x[idx]-med) / med)
+                # anomalies.append(test_statistic)
             res.mask[idx] = True
         if len(anomalies) == 0:
             return 0
-        return np.mean(anomalies)
+        return np.mean(np.abs(anomalies))
     
     def hesd_trace_detection(self, alpha=0.95, ub=0.02):
         grouped_df = self.trace_data.groupby(['cmdb_id', 'serviceName'])[['startTime','actual_time']]
@@ -377,7 +380,7 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 def detection(timestamp):
     global host_df, trace_df
     print('Starting Anomaly Detection')
-    startTime = timestamp - 1200000  # one minute before anomaly
+    startTime = timestamp - 300000  # one minute before anomaly
 
     # print(len(trace_df), trace_df.head())
     # print(len(host_df), host_df.head())
@@ -399,7 +402,7 @@ def detection(timestamp):
     #     item = a.split(':')[0]
     #     if (item not in anoms):
     #         anoms.append(item)
-    # print(results_to_send_off)
+    print(results_to_send_off)
     # submit(results_to_send_off)
     return True
 
@@ -409,8 +412,8 @@ def rcaprocess(esb_item, trace, host, timestamp, lock):
     esb_anomaly = False
 
     # print(trace)
-    trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
-    host_df = host_df[(host_df.timestamp >= (timestamp-1260000))]
+    trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
+    host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
     
     t = time.time()
     t_df = pd.DataFrame(trace)
@@ -518,24 +521,25 @@ if __name__ == '__main__':
 
     '''
         Bellow are for testing purposes
-    # '''
+    # # '''
     
-    global host_df, trace_df
+    # global host_df, trace_df
 
-    path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv(path + 'trace_data_os17.csv')
-    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
-    # trace_df = trace_df.drop(['path'], axis=1)
-    trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
-    # trace = trace[trace.startTime < trace.startTime[0]+1260000]
+    # path = r'D:\\THU Studies\Advance Network Management\\Project\Anomaly-detection\\local_data\\'
+    # trace_df = pd.read_csv(path + 'esd\\trace526209_db007.csv')
+    # trace_df = trace_df.drop(['actual_time'], axis=1)
+    # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
+    # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path + 'kpi_data_os17.csv')
-    host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
+    # host_df = pd.read_csv(path + 'kpi_data_526_db_007.csv')
+    # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
-    # print(trace_df)
-    print(host_df)
-    timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    # # print(trace_df)
+    # print(host_df)
+    # timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    # print()
     # print(timestamp)
     # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
     # print(host_df)
-    detection(timestamp)
+    # detection(timestamp)
+ 
