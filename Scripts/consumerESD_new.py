@@ -128,19 +128,21 @@ class RCA():
         # Carry out the esd test k times  
         res = np.ma.array(x, mask=False) # The "ma" structure allows masking of values to exclude the elements from any calculation
         anomalies = [] # returns the indices of the found anomalies
+        med = np.median(x)
         for i in range(1, k+1):
             location, dispersion = self.esd_test_statistics(res, hybrid) # Sample statistics
             tmp = np.abs(res - location) / dispersion
             idx = np.argmax(tmp) # Index of the test statistic
-            test_statistic = tmp[idx] 
+            test_statistic = tmp[idx]
             n = nobs - res.mask.sum() # sums  nonmasked values
             critical_value = (n - i) * t.ppf(alpha, n - i - 1) / np.sqrt((n - i - 1 + np.power(t.ppf(alpha, n - i - 1), 2)) * (n - i - 1)) 
             if test_statistic > critical_value:
-                anomalies.append(test_statistic)
+                anomalies.append((x[idx]-med) / med)
+                # anomalies.append(test_statistic)
             res.mask[idx] = True
         if len(anomalies) == 0:
             return 0
-        return np.mean(anomalies)
+        return np.mean(np.abs(anomalies))
     
     def hesd_trace_detection(self, alpha=0.95, ub=0.02):
         grouped_df = self.trace_data.groupby(['cmdb_id', 'serviceName'])[['startTime','actual_time']]
