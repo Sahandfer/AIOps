@@ -123,7 +123,6 @@ class RCA():
         if ub > 0.4999:
             ub = 0.499
         k = max(int(np.floor(ub * nobs)), 1) # Maximum number of anomalies. At least 1 anomaly must be tested.
-        #   res_tmp = ts_S_Md_decomposition(x)["residual"] # Residuals from time series decomposition
             
         # Carry out the esd test k times  
         res = np.ma.array(x, mask=False) # The "ma" structure allows masking of values to exclude the elements from any calculation
@@ -278,71 +277,37 @@ class RCA():
         print("Started trace processing")
         p_time = time.time()
         self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote'].copy()
-        df1 = self.trace_data[self.trace_data['callType']=='RemoteProcess']
-        df1 = df1[['pid','cmdb_id']]
+
+        df1 = self.trace_data[self.trace_data['callType']=='RemoteProcess'][['pid','cmdb_id']]
         df1 = df1.set_index('pid')
-
-        csf_cmdb = df1.to_dict()
-        csf_cmdb = {str(key):str(values) for key, values in csf_cmdb['cmdb_id'].items()}
-
-        # for index, row in self.trace_data.iterrows():
-        #     if row['id'] in csf_cmdb:
-        #         self.trace_data.at[index, 'serviceName'] = csf_cmdb[row['id']]
 
         elapse_time = {}
         children = {}
 
-        def do_thing(row):
-            ## if change 297 and 298, gets different result??? loook into this plz
-            if row['id'] in csf_cmdb:
-                row['serviceName'] = csf_cmdb[row['id']]
+        def change_csf_and_setup_dicts(row):
+            if row['id'] in df1:
+                row['serviceName'] = df1[row['id']]
             if row['pid'] != 'None':
                 children[row['pid']] = children.get(row['pid'], [])
                 children[row['pid']].append(row['id'])
             elapse_time[row['id']] = float(row['elapsedTime'])
             return row
-        self.trace_data = self.trace_data.apply(do_thing, axis=1)
-
-
-        # for index, row in self.trace_data.iterrows():
-        #     if row['pid'] != 'None':
-        #         if row['pid'] in children.keys():
-        #             children[row['pid']].append(row['id'])
-        #         else:
-        #             children[row['pid']] = [row['id']]
-        #     elapse_time[row['id']] = float(row['elapsedTime'])
-        # def parse(row):
-        #     if row['pid'] != 'None':
-        #         children[row['pid']] = children.get(row['pid'], [])
-        #         children[row['pid']].append(row['id'])
-        #     elapse_time[row['id']] = float(row['elapsedTime'])
-        
-        # self.trace_data.apply(parse, axis = 1)
+        self.trace_data = self.trace_data.apply(change_csf_and_setup_dicts, axis=1)
 
         self.trace_data['actual_time'] = 0.0
-        # for index, row in self.trace_data.iterrows():
-        #     total_child = 0.0
-        #     if row['id'] not in children.keys():
-        #         self.trace_data.at[index, 'actual_time'] = row['elapsedTime']
-        #         continue
-        #     for child in children[row['id']]:
-        #         total_child += elapse_time[child]
-        #     self.trace_data.at[index, 'actual_time'] = row['elapsedTime'] - total_child
-
         def get_actual_time(row):
             total_child = 0.0
             if row['id'] in children:
                 for child in children[row['id']]:
                     total_child += elapse_time[child]
             row['actual_time'] = row['elapsedTime'] - total_child
-            return row
-        
+            return row        
         self.trace_data = self.trace_data.apply(get_actual_time, axis = 1)
         
         self.trace_data = self.trace_data[~(self.trace_data['serviceName'].str.contains('csf', na=True))]
 
         print("Trace processed in ", time.time()-p_time, 'seconds')
-        print(self.trace_data)
+        # print(self.trace_data)
 
 
 # Three topics are available: platform-index, business-index, trace.
@@ -390,8 +355,8 @@ def detection(timestamp):
                              (trace_df['startTime'] <= timestamp)]
     host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
                            (host_df['timestamp'] <= timestamp)]
-    print(len(trace_df_temp), trace_df_temp.head())
-    print(len(host_df_temp), host_df_temp.head())
+    # print(len(trace_df_temp), trace_df_temp.head())
+    # print(len(host_df_temp), host_df_temp.head())
 
     rca_temp = RCA(trace_data=trace_df_temp, host_data=host_df_temp)
     results_to_send_off = rca_temp.run()
@@ -538,7 +503,7 @@ if __name__ == '__main__':
     host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # print(trace_df)
-    print(host_df)
+    # print(host_df)
     timestamp = int(host_df['timestamp'].iloc[-1]-180000)
     # print(timestamp)
     # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
