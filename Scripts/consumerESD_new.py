@@ -6,9 +6,9 @@ Example for RCAing like a B0$$
 '''
 import requests
 import json
-
+import statistics
 # from kafka import KafkaConsumer
-
+import operator
 import pickle
 import time
 import numpy as np
@@ -18,6 +18,7 @@ from termcolor import colored
 from sklearn import preprocessing
 from sklearn.cluster import Birch
 from sklearn.neighbors import KernelDensity
+from sklearn.ensemble import IsolationForest
 from threading import Thread, Lock
 
 
@@ -169,33 +170,72 @@ class RCA():
         for i in range(len(self.dockers)):
             self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
 
-
-    def find_anomalous_rows(self, min_threshold = 5):
-        table = self.anomaly_chart.copy()
-        threshold = max( 0.5 * table.stack().max(), min_threshold)
-        dodgy_rows = []
-        just_rows = []
-        row_col_dict = {}
-        for column in table:
-            v = 0
-            r = ''
-            for index, row in table.iterrows():
-                if (row[column] > threshold):
-                    if index == column:
-                        dodgy_rows.append([index, column, row[column]])
-                        just_rows.append(index)
-                        row_col_dict[index] = True
-                        break
-                    elif (row[column] > v):
-                        v = row[column]
-                        r = index
-            if r != '':
-                dodgy_rows.append([r, column, v])
-                just_rows.append(r)
-                if r not in row_col_dict.keys():
-                    row_col_dict[r] = False
+    def isolation_forest(self, values):
+        X = np.reshape(values, (-1, 1))
+        iso = IsolationForest()
+        yhat = iso.fit_predict(X)
+        return yhat
+    
+    def find_threshold(self, table):
+        thresh_idx = 0
+        seen_normal = False # If seen 1 or not
+        values = table.stack().tolist()
+        yhat = self.isolation_forest(values)
+        for i in range(len(yhat)):
+            if (yhat[i] == 1):
+                seen_normal = True
+            elif (yhat[i] == -1) and seen_normal:
+                thresh_idx = i
+                break
+            
+        secondary = values[thresh_idx:-1]
+        med = statistics.median(secondary)
+        threshold = statistics.median([abs(x-med) for x in secondary])+secondary[0]
         
-        output = self.localize(dodgy_rows, list(set(just_rows)), row_col_dict)
+        return threshold
+
+    def find_anomalous_rows(self):
+        table = self.anomaly_chart.copy()
+        threshold = self.find_threshold(table)
+        
+        row_col_dict = {}
+        column_dict= {}
+        row_dict = {}
+
+        for column in table:
+            for index, row in table.iterrows():
+                if (str(row[column]) != 'nan'):
+                    if (column in column_dict.keys()):
+                        column_dict[column]= (column_dict[column]+ row[column])/2
+                    else:
+                        column_dict[column]= row[column]
+
+                    if (index in row_dict.keys()):
+                        row_dict[index]= (column_dict[column]+ row[column])/2
+                    else:
+                        row_dict[index]=row[column]
+
+                    if index == column:
+                        row_col_dict[index] = True
+                    else:
+                        if index not in row_col_dict.keys():
+                            row_col_dict[index] = False
+        
+        for key in row_dict.keys():
+            if (key in column_dict.keys()):
+                row_dict[key] = (row_dict[key]+ column_dict[key]) //2
+              
+        # Sort based on values  
+        just_rows =  {v:k for k, v in sorted(row_dict.items(), key=operator.itemgetter(1),reverse=True)}
+        row_vals = list(just_rows.keys())
+        yhat_temp = self.isolation_forest(row_vals)
+        
+        output = []
+        for i in range(len(yhat_temp)):
+            if (yhat_temp[i] == -1):
+                output.append(just_rows[row_vals[i]])
+        
+        output = self.localize(output, row_col_dict)
         return output
 
 
@@ -225,20 +265,20 @@ class RCA():
         return kpi_names
 
 
-    def localize(self, dodgy_rows, just_rows, row_col_dict):
-        n = len(just_rows)
+    def localize(self, output, row_col_dict):
+        n = len(output)
         print('%d anomalies found' % n)
         if n < 1:
             return None
         if n == 1:
-            KPIs = self.find_anomalous_kpi(just_rows[0], row_col_dict[list(row_col_dict.keys())[0]])
+            KPIs = self.find_anomalous_kpi(output[0], row_col_dict[list(row_col_dict.keys())[0]])
             to_be_sent = []
             for KPI in KPIs:
-                to_be_sent.append([just_rows[0], KPI])
+                to_be_sent.append([output[0], KPI])
             return to_be_sent
-        if n == 2:
-            r0 = just_rows[0]
-            r1 = just_rows[1]
+        if n >= 2:
+            r0 = output[0]
+            r1 = output[1]
             if ('os' in r0) and ('os' in r1):
                 KPIS = self.find_anomalous_kpi('os_001')
                 return [['os_001', KPIS[0]], ['os_001', KPIS[1]]]
@@ -259,12 +299,12 @@ class RCA():
             for kpi in KPI1s:
                 to_be_sent.append([r1, kpi])
             return to_be_sent
-        if n > 2:
-            dodgy_rows.sort(key = lambda x: x[2], reverse = True)
-            just_rows = [x[0] for x in dodgy_rows]
-            just_rows = list(np.unique(just_rows))
-            row_col_dict = { just_rows[0]: row_col_dict[just_rows[0]], just_rows[1]: row_col_dict[just_rows[1]] } 
-            return self.localize(dodgy_rows[:2], just_rows[:2], row_col_dict)
+        # if n > 2:
+        #     dodgy_rows.sort(key = lambda x: x[2], reverse = True)
+        #     just_rows = [x[0] for x in dodgy_rows]
+        #     just_rows = list(np.unique(just_rows))
+        #     row_col_dict = { just_rows[0]: row_col_dict[just_rows[0]], just_rows[1]: row_col_dict[just_rows[1]] } 
+        #     return self.localize(dodgy_rows[:2], just_rows[:2], row_col_dict)
 
 
     def update_trace_data(self, trace_data):
