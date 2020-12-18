@@ -219,7 +219,8 @@ class RCA():
             
         secondary = values[thresh_idx:-1]
         med = statistics.median(secondary)
-        threshold = statistics.median([abs(x-med) for x in secondary])
+        threshold = max(2,statistics.median([abs(x-med) for x in secondary]))
+        print(threshold)
         
         return threshold
 
@@ -274,11 +275,14 @@ class RCA():
         output = []
         final_rows =  {v:k for k, v in sorted(final_dict.items(), key=operator.itemgetter(1),reverse=True)}
         vals = list(final_rows.keys())
-        med = statistics.mean(vals)
-        yhat = self.isolation_forest(vals)
-        for i in range(len(yhat)):
-            if (yhat[i] == -1) and (vals[i]>=med):
-                output.append(final_rows[vals[i]])
+        if len(vals) > 1:
+            med = statistics.mean(vals)
+            yhat = self.isolation_forest(vals)
+            for i in range(len(yhat)):
+                if (yhat[i] == -1) and (vals[i]>=med):
+                    output.append(final_rows[vals[i]])
+        else:
+            output.append(final_rows[vals[0]])
         
         final_output = self.localize(output, row_col_dict)
         return final_output
@@ -575,13 +579,13 @@ if __name__ == '__main__':
 
     # path= 'training_data/'
     path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv(path+'trace_526339_db007_onoff.csv')
+    trace_df = pd.read_csv(path+'trace_527323_docker001.csv')
     # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.drop(['path'], axis=1)
     trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path+'kpi_data_527_db007_onoff.csv')
+    host_df = pd.read_csv(path+'kpi_data_527_docker001.csv')
     host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # print(trace_df)
