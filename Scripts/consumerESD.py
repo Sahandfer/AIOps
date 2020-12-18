@@ -183,7 +183,7 @@ class RCA():
             for index, row in table.iterrows():
                 if (row[column] > threshold):
                     if index == column:
-                        dodgy_rows.append([index, row[column]])
+                        dodgy_rows.append([index, column, row[column]])
                         just_rows.append(index)
                         row_col_dict[index] = True
                         break
@@ -263,7 +263,7 @@ class RCA():
         if n > 2:
             dodgy_rows.sort(key = lambda x: x[2], reverse = True)
             just_rows = [x[0] for x in dodgy_rows]
-            just_rows = list(set(just_rows))
+            just_rows = list(np.unique(just_rows))
             row_col_dict = { just_rows[0]: row_col_dict[just_rows[0]], just_rows[1]: row_col_dict[just_rows[1]] } 
             return self.localize(dodgy_rows[:2], just_rows[:2], row_col_dict)
 
@@ -310,11 +310,6 @@ class RCA():
         #             children[row['pid']].append(row['id'])
         #         else:
         #             children[row['pid']] = [row['id']]
-        #     elapse_time[row['id']] = float(row['elapsedTime'])
-        # def parse(row):
-        #     if row['pid'] != 'None':
-        #         children[row['pid']] = children.get(row['pid'], [])
-        #         children[row['pid']].append(row['id'])
         #     elapse_time[row['id']] = float(row['elapsedTime'])
         
         # self.trace_data.apply(parse, axis = 1)
