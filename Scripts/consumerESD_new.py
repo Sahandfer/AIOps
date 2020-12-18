@@ -285,8 +285,8 @@ class RCA():
         children = {}
 
         def change_csf_and_setup_dicts(row):
-            if row['id'] in df1:
-                row['serviceName'] = df1[row['id']]
+            if row['id'] in df1.index:
+                row['serviceName'] = df1.at[row['id'],'cmdb_id']
             if row['pid'] != 'None':
                 children[row['pid']] = children.get(row['pid'], [])
                 children[row['pid']].append(row['id'])
