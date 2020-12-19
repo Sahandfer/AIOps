@@ -201,32 +201,44 @@ class RCA():
     def find_anomalous_rows(self, min_threshold = 10):
         table = self.anomaly_chart.copy()
         threshold = max( 0.5 * table.stack().max(), min_threshold)
-        dodgy_rows = []
-        just_rows = []
+        
+        column_dict= {}
+        row_dict = {}
+        confidence_col = {}
+        confidence_row = {}
+
         for column in table:
-            v = 0
-            r = ''
             for index, row in table.iterrows():
-                if (row[column] > threshold):
-                    if index == column:
-                        dodgy_rows.append([index, row[column]])
-                        just_rows.append(index)
-                        break
-                    elif (row[column] > v):
-                        v = row[column]
-                        r = index
-            if r != '':
-                dodgy_rows.append([r, v])
-                just_rows.append(r)
+                increment = 0
+                if row[column] >= threshold:
+                    increment = 1
 
-        just_rows = list(np.unique(just_rows))
+                column_dict[column] = column_dict.get(column, 0)
+                column_dict[column] += increment
+                confidence_col[column] = confidence_col(column, [])
+                confidence_col[column].append(row[column])
 
-        dodgy_rows_dict = {}
-
-        for row in just_rows:
-            temp = [x[1] for x in dodgy_rows if x[0] == row]
-            temp.sort(reverse = True)
-            dodgy_rows_dict[row] = temp[0]
+                row_dict[index] = row_dict(index, 0)
+                row_dict[index] += increment
+                confidence_row[index] = confidence_row.get(index, [])
+                confidence_row[index].append(row[column])
+        
+        for key, value in confidence_col.items():
+            confidence_col[key] =  np.nanmean(value)
+            
+        for key, value in confidence_row.items():
+            confidence_row[key] =  np.nanmean(value)            
+            
+        final_dict = {}
+        for key in list(row_dict.keys()):
+            if key in list(column_dict.keys()):
+                row_dict[key] = (row_dict[key] + column_dict[key]) / 2
+                confidence_row[key] = (confidence_row[key] + confidence_col[key]) / 2
+            final_dict[key] = row_dict[key] * confidence_row[key]
+        
+        dodgy_rows_dict = dict(sorted(final_dict.items(), key=lambda item: item[1], reverse=True))
+        dodgy_rows_dict =  {k:v for k, v in dodgy_rows_dict if (v != 0)}
+        just_rows = list(dodgy_rows_dict.keys())
         
         output = self.localize(dodgy_rows_dict, just_rows)
         return output
