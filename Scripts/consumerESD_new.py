@@ -4,15 +4,15 @@
 '''
 Example for RCAing like a B0$$
 '''
-import networkx as nx
+# import networkx as nx
 import requests
 import json
 import statistics
-# from kafka import KafkaConsumer
+from kafka import KafkaConsumer
 import itertools
 import operator
 import pickle
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import time
 import numpy as np
 import pandas as pd
@@ -183,7 +183,7 @@ class RCA():
         # nx.draw_networkx(dg, positions, node_size = 5500, node_color = '#00BFFF')
         # plt.show()
 
-        # print(self.anomaly_chart.to_dict())
+        print(self.anomaly_chart.to_dict())
         return self.anomaly_chart
     
     def local_initiate(self):
@@ -209,6 +209,7 @@ class RCA():
         thresh_idx = 0
         seen_normal = False # If seen 1 or not
         values = table.stack().tolist()
+        values.sort()
         yhat = self.isolation_forest(values)
         for i in range(len(yhat)):
             if (yhat[i] == 1):
@@ -219,8 +220,9 @@ class RCA():
             
         secondary = values[thresh_idx:-1]
         med = statistics.median(secondary)
-        threshold = max(2,statistics.median([abs(x-med) for x in secondary]))
-        print(threshold)
+        threshold = statistics.median([abs(x-med) for x in secondary])
+        threshold = max(10, threshold, 0.04 * table.stack().max())
+        print('The threshold is %f' % threshold)
         
         return threshold
 
@@ -278,6 +280,8 @@ class RCA():
         if len(vals) > 1:
             med = statistics.mean(vals)
             yhat = self.isolation_forest(vals)
+            print('yhat is printed below:')
+            print(list(yhat))
             for i in range(len(yhat)):
                 if (yhat[i] == -1) and (vals[i]>=med):
                     output.append(final_rows[vals[i]])
@@ -315,9 +319,11 @@ class RCA():
 
 
     def localize(self, output, row_col_dict):
-        print(output)
         n = len(output)
-        print('%d anomalies found' % n)
+        print('We found %d anomalies, printed below:' % n)
+        print(output)
+        print('row_col_dict is also printed:')
+        print(row_col_dict)
         if n < 1:
             return None
         if n == 1:
@@ -329,7 +335,11 @@ class RCA():
         if n >= 2:
             to_be_sent = []
             os = [x for x in output if 'os' in x]
+            print('The variable os is printed below:')
+            print(os)
             docker = [y for y in output if 'docker' in y]
+            print('The variable docker is printed below:')
+            print(docker)
 
             if len(os)==2:
                 KPIS = self.find_anomalous_kpi('os_001')
@@ -337,6 +347,9 @@ class RCA():
 
             if len(docker) >= 2:
                 c = list(itertools.combinations(docker,2))
+                print('Two or more docker_00X hosts found. Looking for common host.')
+                print('The possible combinations are printed below:')
+                print(c)
                 for a, b in c:
                     if self.docker_lookup_table[a] == self.docker_lookup_table[b]:
                         KPIS = self.find_anomalous_kpi(self.docker_lookup_table[a])
@@ -344,6 +357,7 @@ class RCA():
                             to_be_sent.append([self.docker_lookup_table[a], kpi])
                         return to_be_sent
 
+            print('The hosts found do not have appear to have common hosts, hence we take the best one.')
             KPIs = self.find_anomalous_kpi(output[0], row_col_dict[output[0]])
             for kpi in KPIs:
                 to_be_sent.append([output[0], kpi])
@@ -396,11 +410,11 @@ class RCA():
 # Three topics are available: platform-index, business-index, trace.
 # Subscribe at least one of them.
 AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
-# CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
-#                          bootstrap_servers=['172.21.0.8', ],
-#                          auto_offset_reset='latest',
-#                          enable_auto_commit=False,
-#                          security_protocol='PLAINTEXT')
+CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
+                         bootstrap_servers=['172.21.0.8', ],
+                         auto_offset_reset='latest',
+                         enable_auto_commit=False,
+                         security_protocol='PLAINTEXT')
 
 
 class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-few-public-methods
@@ -476,8 +490,11 @@ def rcaprocess(esb_item, trace, host, timestamp, lock):
 
     print('Time to add new data: ', (time.time()-t))
 
+    print('esb_anal.esb_data.tail(1) is printed below:')
     print(esb_anal.esb_data.tail(1))
+    print('host_df.tail(1) is printed below:')
     print(host_df.tail(1))
+    print('trace_df.tail(1) is printed below:')
     print(trace_df.tail(1))
 
     with lock:
@@ -505,14 +522,14 @@ def submit(ctx):
     r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
 
-# esb_df = pd.DataFrame(columns=[
-#                       'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
-# host_df = pd.DataFrame(
-#     columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-# trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-#                                  'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-# esb_anal = ESB_Analyzer(esb_df)
-# a_time = 0.0
+esb_df = pd.DataFrame(columns=[
+                      'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+host_df = pd.DataFrame(
+    columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+esb_anal = ESB_Analyzer(esb_df)
+a_time = 0.0
 
 
 def main():
@@ -531,6 +548,8 @@ def main():
     a_time = 0.0
 
     lock = Lock()
+
+    print('Running under Sami\'s update 2')
 
     print('Started receiving data! Fingers crossed...')
 
@@ -569,31 +588,31 @@ def main():
             trace_list.append(Trace(data))
 
 if __name__ == '__main__':
-    # main()
+    main()
 
     '''
         Bellow are for testing purposes
     # '''
     
-    global host_df, trace_df
+    # global host_df, trace_df
 
-    # path= 'training_data/'
-    path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
-    trace_df = pd.read_csv(path+'trace_527323_docker001.csv')
-    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
-    # trace_df = trace_df.drop(['path'], axis=1)
-    trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
-    # trace = trace[trace.startTime < trace.startTime[0]+1260000]
+    # # path= 'training_data/'
+    # path = r'C:\\Users\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\'
+    # trace_df = pd.read_csv(path+'trace_527323_docker001.csv')
+    # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
+    # # trace_df = trace_df.drop(['path'], axis=1)
+    # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
+    # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path+'kpi_data_527_docker001.csv')
-    host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
+    # host_df = pd.read_csv(path+'kpi_data_527_docker001.csv')
+    # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
-    # print(trace_df)
-    # print(host_df)
-    timestamp = int(trace_df['startTime'].iloc[-1]-180000)
+    # # print(trace_df)
+    # # print(host_df)
+    # timestamp = int(trace_df['startTime'].iloc[-1]-180000)
     
-    # print(timestamp)
-    # print(timestamp)
-    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
-    # print(host_df)
-    detection(timestamp)
+    # # print(timestamp)
+    # # print(timestamp)
+    # # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
+    # # print(host_df)
+    # detection(timestamp)
