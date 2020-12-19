@@ -238,7 +238,8 @@ class RCA():
         
         dodgy_rows_dict = dict(sorted(final_dict.items(), key=lambda item: item[1], reverse=True))
         m = max(dodgy_rows_dict.values())
-        dodgy_rows_dict =  {k:v for k, v in dodgy_rows_dict.items() if (v >= 0.1*m)}
+        n = max(m, 1)
+        dodgy_rows_dict =  {k:v for k, v in dodgy_rows_dict.items() if (v > 0.1*n)}
         just_rows = list(dodgy_rows_dict.keys())
         
         output = self.localize(dodgy_rows_dict, just_rows)
