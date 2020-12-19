@@ -158,7 +158,6 @@ class RCA():
         
         # import networkx as nx
         # import matplotlib.pyplot as plt
-
         # dg = nx.DiGraph()
         # for col in self.anomaly_chart:
         #     for index, row in self.anomaly_chart.iterrows():
