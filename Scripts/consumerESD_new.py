@@ -4,7 +4,6 @@
 '''
 Example for RCAing like a B0$$
 '''
-# import networkx as nx
 import requests
 import json
 import statistics
@@ -12,7 +11,7 @@ from kafka import KafkaConsumer
 import itertools
 import operator
 import pickle
-# import matplotlib.pyplot as plt
+
 import time
 import numpy as np
 import pandas as pd
@@ -160,6 +159,9 @@ class RCA():
         self.anomaly_chart = self.anomaly_chart.sort_index()
         print(self.anomaly_chart)
 
+
+        # import networkx as nx
+        # import matplotlib.pyplot as plt
         # dg = nx.DiGraph()
         # for col in self.anomaly_chart:
         #     for index, row in self.anomaly_chart.iterrows():
@@ -550,7 +552,7 @@ def main():
     lock = Lock()
 
     print('Running under Sami\'s update 2')
-
+    
     print('Started receiving data! Fingers crossed...')
 
     # Dataframes for the three different datasets
@@ -586,6 +588,7 @@ def main():
         else:  # message.topic == 'trace'
             # print(data)
             trace_list.append(Trace(data))
+
 
 if __name__ == '__main__':
     main()
