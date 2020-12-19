@@ -270,8 +270,8 @@ class RCA():
         final_dict = {}
         for key in row_dict.keys():
             if (key in column_dict.keys()):
-                row_dict[key] = (row_dict[key]+ column_dict[key]) //2
-                confidence_row[key] = (confidence_row[key] + confidence_col[key]) //2
+                row_dict[key] = (row_dict[key] + column_dict[key]) / 2
+                confidence_row[key] = (confidence_row[key] + confidence_col[key]) / 2
             final_dict[key] = row_dict[key] * confidence_row[key]
         
         output = []
