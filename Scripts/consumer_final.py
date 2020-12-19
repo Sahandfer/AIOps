@@ -200,7 +200,7 @@ class RCA():
 
     def find_anomalous_rows(self, min_threshold = 10):
         table = self.anomaly_chart.copy()
-        threshold = max( 0.5 * table.stack().max(), min_threshold)
+        threshold = max( 0.2 * table.stack().max(), min_threshold)
         
         column_dict= {}
         row_dict = {}
@@ -215,10 +215,10 @@ class RCA():
 
                 column_dict[column] = column_dict.get(column, 0)
                 column_dict[column] += increment
-                confidence_col[column] = confidence_col(column, [])
+                confidence_col[column] = confidence_col.get(column, [])
                 confidence_col[column].append(row[column])
 
-                row_dict[index] = row_dict(index, 0)
+                row_dict[index] = row_dict.get(index, 0)
                 row_dict[index] += increment
                 confidence_row[index] = confidence_row.get(index, [])
                 confidence_row[index].append(row[column])
@@ -237,7 +237,8 @@ class RCA():
             final_dict[key] = row_dict[key] * confidence_row[key]
         
         dodgy_rows_dict = dict(sorted(final_dict.items(), key=lambda item: item[1], reverse=True))
-        dodgy_rows_dict =  {k:v for k, v in dodgy_rows_dict if (v != 0)}
+        m = max(dodgy_rows_dict.values())
+        dodgy_rows_dict =  {k:v for k, v in dodgy_rows_dict.items() if (v >= 0.1*m)}
         just_rows = list(dodgy_rows_dict.keys())
         
         output = self.localize(dodgy_rows_dict, just_rows)
@@ -325,8 +326,7 @@ class RCA():
     def trace_processing(self):
         print("Started trace processing")
         p_time = time.time()
-        self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote'].copy()
-
+        
         df1 = self.trace_data[self.trace_data['callType']=='RemoteProcess'][['pid','cmdb_id']]
         df1 = df1.set_index('pid')
 
@@ -352,7 +352,8 @@ class RCA():
             row['actual_time'] = row['elapsedTime'] - total_child
             return row        
         self.trace_data = self.trace_data.apply(get_actual_time, axis = 1)
-        
+
+        self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote'].copy()
         self.trace_data = self.trace_data[~(self.trace_data['serviceName'].str.contains('csf', na=True))]
 
         print("Trace processed in ", time.time()-p_time, 'seconds')
@@ -549,12 +550,12 @@ if __name__ == '__main__':
     # global host_df, trace_df
 
     # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\esd\\'
-    # trace_df = pd.read_csv(path + 'trace_526339_os18.csv')
+    # trace_df = pd.read_csv(path + 'trace_527323_docker001.csv')
     # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    # host_df = pd.read_csv(path + 'kpi_data_526_os18.csv')
+    # host_df = pd.read_csv(path + 'kpi_data_527_docker001.csv')
     # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # # print(trace_df)
