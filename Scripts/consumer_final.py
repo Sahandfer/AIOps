@@ -272,7 +272,7 @@ class RCA():
             return to_be_sent
         if n >= 2:
             dodgy_rows_dict = dict(sorted(dodgy_rows_dict.items(), key=lambda item: item[1], reverse=True))
-            just_rows = dodgy_rows_dict.keys()
+            just_rows = list(dodgy_rows_dict.keys())
             to_be_sent = []
             os = [x for x in just_rows if 'os' in x]
             print('The variable os is printed below:')
@@ -300,7 +300,7 @@ class RCA():
             print('The hosts found do not have appear to have common hosts, hence we take the best one.')
             KPIs = self.find_anomalous_kpi(just_rows[0])
             for kpi in KPIs:
-                to_be_sent.append([output[0], kpi])
+                to_be_sent.append([just_rows[0], kpi])
             return to_be_sent
 
 
@@ -536,18 +536,18 @@ if __name__ == '__main__':
     
     # global host_df, trace_df
 
-    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\'
-    # trace_df = pd.read_csv(path + 'trace_5_26.csv')
-    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
+    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\esd\\'
+    # trace_df = pd.read_csv(path + 'trace_526339_os18.csv')
+    # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    # host_df = pd.read_csv(path + 'kpi_data_526.csv')
+    # host_df = pd.read_csv(path + 'kpi_data_526_os18.csv')
     # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # # print(trace_df)
     # print(host_df)
-    # timestamp = int(host_df['timestamp'].iloc[-1]-180000)
+    # timestamp = int(trace_df['startTime'].iloc[-1]-180000)
     # print(timestamp)
     # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
     # print(host_df)
