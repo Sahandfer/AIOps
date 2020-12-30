@@ -137,27 +137,21 @@ class RCA():
 
 
     def page_rank(self):
-<<<<<<< HEAD
         self.base_graph=self.base_graph.reverse(copy=True)
-=======
->>>>>>> 9099032c0903ec475083d5f0fcb0c0bca08c7f91
+
+
         page_rank = nx.pagerank(self.base_graph, alpha=0.85, personalization = self.personalization ,max_iter=10000)
         page_rank = [(svc, val) for svc, val in dict(sorted(page_rank.items(), key=lambda item: item[1], reverse=True)).items()]
+
         # page_rank = []
         # for node in self.base_graph.nodes:
-<<<<<<< HEAD
-            # weight = 0
-            # for _, _, d in self.base_graph.in_edges(node, data=True):
-                # weight += d['weight']
-            # val = weight
-            # page_rank.append((node, val))
-=======
+
         #     weight = 0
         #     for _, _, d in self.base_graph.in_edges(node, data=True):
         #         weight += d['weight']
         #     val = weight
         #     page_rank.append((node, val))
->>>>>>> 9099032c0903ec475083d5f0fcb0c0bca08c7f91
+        
         page_rank.sort(key=lambda tripple: tripple[1], reverse = True)
         print('All nodes listed by their rank:')
         for node, val in page_rank:
