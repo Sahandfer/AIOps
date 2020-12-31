@@ -611,7 +611,7 @@ if __name__ == '__main__':
 
     # # print(trace_df)
     # print(host_df)
-    # timestamp = int(trace_df['startTime'].iloc[-1]-180000)
+    # timestamp = int(trace_df['startTime'].iloc[-1])
     # print(timestamp)
     # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
     # print(host_df)
