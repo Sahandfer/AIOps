@@ -128,3 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Local data folder
+local_data

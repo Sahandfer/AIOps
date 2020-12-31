@@ -17,58 +17,28 @@ CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
                          security_protocol='PLAINTEXT')
 
 
-class PlatformIndex():  # pylint: disable=too-few-public-methods
-    '''Structure for platform indices'''
-
-    __slots__ = ['item_id', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id']
-
-    def __init__(self, data):
-        self.item_id = data['itemid']
-        self.name = data['name']
-        self.bomc_id = data['bomc_id']
-        self.timestamp = data['timestamp']
-        self.value = data['value']
-        self.cmdb_id = data['cmdb_id']
-
-
-class BusinessIndex():  # pylint: disable=too-few-public-methods
-    '''Structure for business indices'''
-
-    __slots__ = ['service_name', 'start_time', 'avg_time', 'num',
-                 'succee_num', 'succee_rate']
-
-    def __init__(self, data):
-        self.service_name = data['serviceName']
-        self.start_time = data['startTime']
-        self.avg_time = data['avg_time']
-        self.num = data['num']
-        self.succee_num = data['succee_num']
-        self.succee_rate = data['succee_rate']
-
-
 class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-few-public-methods
     '''Structure for traces'''
 
     __slots__ = ['call_type', 'start_time', 'elapsed_time', 'success',
                  'trace_id', 'id', 'pid', 'cmdb_id', 'service_name', 'ds_name']
 
-    def __init__(self, data):
-        self.call_type = data['callType']
-        self.start_time = data['startTime']
-        self.elapsed_time = data['elapsedTime']
-        self.success = data['success']
-        self.trace_id = data['traceId']
-        self.id = data['id']
-        self.pid = data['pid']
-        self.cmdb_id = data['cmdb_id']
+    def __new__(self, data):
+        self.trace = data
+        if self.trace['callType']=='LOCAL':
+            try:
+                self.trace['serviceName'] = data['dsName']
+            except:
+                print(data)
+                print('LOCAL doesnt have dsName')
+        
+        elif self.trace['callType']=='RemoteProcess' or self.trace['callType']=='OSB':
+            self.trace['serviceName'] = data['cmdb_id']
 
-        if 'serviceName' in data:
-            # For data['callType']
-            #  in ['CSF', 'OSB', 'RemoteProcess', 'FlyRemote', 'LOCAL']
-            self.service_name = data['serviceName']
-        if 'dsName' in data:
-            # For data['callType'] in ['JDBC', 'LOCAL']
-            self.ds_name = data['dsName']
+        if 'dsName' in self.trace:
+            self.trace.pop('dsName')
+
+        return self.trace
 
 
 def submit(ctx):
@@ -84,46 +54,71 @@ def submit(ctx):
     r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
 
+esb_df = pd.DataFrame(columns=[
+                      'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+host_df = pd.DataFrame(
+    columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+esb_anal = ESB_Analyzer(esb_df)
+a_time = 0.0
+
+
 def main():
     '''Consume data and react'''
-    # Check authorities
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-    submit([['docker_003', 'container_cpu_used']])
-    i = 0
-    for message in CONSUMER:
-        i += 1
-        data = json.loads(message.value.decode('utf8'))
-        if message.topic == 'platform-index':
-            # data['body'].keys() is supposed to be
-            # ['os_linux', 'db_oracle_11g', 'mw_redis', 'mw_activemq',
-            #  'dcos_container', 'dcos_docker']
-            data = {
-                'timestamp': data['timestamp'],
-                'body': {
-                    stack: [PlatformIndex(item) for item in data['body'][stack]]
-                    for stack in data['body']
-                },
-            }
-            timestamp = data['timestamp']
-        elif message.topic == 'business-index':
-            # data['body'].keys() is supposed to be ['esb', ]
-            data = {
-                'startTime': data['startTime'],
-                'body': {
-                    key: [BusinessIndex(item) for item in data['body'][key]]
-                    for key in data['body']
-                },
-            }
-            timestamp = data['startTime']
-        else:  # message.topic == 'trace'
-            data = {
-                'startTime': data['startTime'],
-                'body': Trace(data),
-            }
-            timestamp = data['startTime']
-        print(i, message.topic, timestamp)
+    global esb_df, host_df, trace_df, esb_anal, a_time
 
+    esb_df = pd.DataFrame(columns=[
+                          'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+    host_df = pd.DataFrame(
+        columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+    trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                     'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+    esb_anal = ESB_Analyzer(esb_df)
+    a_time = 0.0
+
+    lock = Lock()
+
+    print('Running under Sami\'s update 3')
+
+    print('Started receiving data! Fingers crossed...')
+
+    # Dataframes for the three different datasets
+
+    trace_list = []
+    host_list = []
+
+    for message in CONSUMER:
+        data = json.loads(message.value.decode('utf8'))
+
+        # Host data
+        if message.topic == 'platform-index':
+            for stack in data['body']:
+                for item in data['body'][stack]:
+                    # host_df = host_df.append(item, ignore_index=True)
+                    host_list.append(item)
+
+        # ESB data
+        elif message.topic == 'business-index':
+            timestamp = data['startTime']
+
+            esb_item = data['body']['esb'][0]
+
+            try:
+                Thread(target=rcaprocess, args=(esb_item, trace_list, host_list, timestamp, lock)).start()
+            except:
+                print("Error: unable to start rcaprocess")
+
+            trace_list = []
+            host_list = []
+
+        # Trace data
+        else:  # message.topic == 'trace'
+            # print(data)
+            
+            trace_list.append(Trace(data))
 
 if __name__ == '__main__':
     main()
