@@ -348,7 +348,7 @@ class RCA():
                     if self.docker_lookup_table[a] == self.docker_lookup_table[b]:
                         KPIS = self.find_anomalous_kpi(self.docker_lookup_table[a], False)
                         for kpi in KPIS:
-                            to_be_sent.append([docker_lookup_table[a], kpi])
+                            to_be_sent.append([self.docker_lookup_table[a], kpi])
                         return to_be_sent
 
             print('The hosts found do not have appear to have common hosts, hence we take the best one.')
@@ -594,19 +594,19 @@ def main():
 if __name__ == '__main__':
     main()
 
-    '''
-        Bellow are for testing purposes
     # '''
+    #     Bellow are for testing purposes
+    # # '''
     
     # global host_df, trace_df
 
-    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\esd\\'
-    # trace_df = pd.read_csv(path + 'trace_527323_docker001.csv')
+    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\noJDBC\\'
+    # trace_df = pd.read_csv(path + 'trace_data_527_db007_onoff.csv')
     # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    # host_df = pd.read_csv(path + 'kpi_data_527_docker001.csv')
+    # host_df = pd.read_csv(path + 'kpi_data_527_db007_onoff.csv')
     # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # # print(trace_df)
