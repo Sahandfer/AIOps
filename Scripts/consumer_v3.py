@@ -7,7 +7,7 @@ Example for RCAing like a B0$$
 import requests
 import json
 
-# from kafka import KafkaConsumer
+from kafka import KafkaConsumer
 
 import itertools
 import pickle
@@ -268,7 +268,7 @@ class RCA():
         m = 0.1 * max(list(dodgy_hosts.values())+[10])
         dodgy_hosts = {k: v for k, v in dodgy_hosts.items() if (v > m)}
 
-        output = self.localize(dodgy_rows_dict, just_rows)
+        output = self.localize(dodgy_hosts, local_abnormal)
         return output
 
 
@@ -410,14 +410,14 @@ class RCA():
         # print(self.trace_data)
 
 
-# # Three topics are available: platform-index, business-index, trace.
-# # Subscribe at least one of them.
-# AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
-# CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
-#                          bootstrap_servers=['172.21.0.8', ],
-#                          auto_offset_reset='latest',
-#                          enable_auto_commit=False,
-#                          security_protocol='PLAINTEXT')
+# Three topics are available: platform-index, business-index, trace.
+# Subscribe at least one of them.
+AVAILABLE_TOPICS = set(['platform-index', 'business-index', 'trace'])
+CONSUMER = KafkaConsumer('platform-index', 'business-index', 'trace',
+                         bootstrap_servers=['172.21.0.8', ],
+                         auto_offset_reset='latest',
+                         enable_auto_commit=False,
+                         security_protocol='PLAINTEXT')
 
 
 class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-few-public-methods
@@ -525,14 +525,14 @@ def submit(ctx):
     r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
 
 
-# esb_df = pd.DataFrame(columns=[
-#                       'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
-# host_df = pd.DataFrame(
-#     columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-# trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-#                                  'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-# esb_anal = ESB_Analyzer(esb_df)
-# a_time = 0.0
+esb_df = pd.DataFrame(columns=[
+                      'serviceName', 'startTime', 'avg_time', 'num', 'succee_num', 'succee_rate'])
+host_df = pd.DataFrame(
+    columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+esb_anal = ESB_Analyzer(esb_df)
+a_time = 0.0
 
 
 def main():
@@ -588,30 +588,31 @@ def main():
         # Trace data
         else:  # message.topic == 'trace'
             # print(data)
-            trace_list.append(Trace(data))
+            if data['callType'] != 'JDBC':
+                trace_list.append(Trace(data))
 
 if __name__ == '__main__':
-    # main()
+    main()
 
     '''
         Bellow are for testing purposes
     # '''
     
-    global host_df, trace_df
+    # global host_df, trace_df
 
-    path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\esd\\'
-    trace_df = pd.read_csv(path + 'trace_527323_docker001.csv')
-    # trace_df = trace_df.drop(['actual_time','path'], axis=1)
-    trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
-    # trace = trace[trace.startTime < trace.startTime[0]+1260000]
+    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\esd\\'
+    # trace_df = pd.read_csv(path + 'trace_527323_docker001.csv')
+    # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
+    # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
+    # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    host_df = pd.read_csv(path + 'kpi_data_527_docker001.csv')
-    host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
+    # host_df = pd.read_csv(path + 'kpi_data_527_docker001.csv')
+    # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
-    # print(trace_df)
-    print(host_df)
-    timestamp = int(trace_df['startTime'].iloc[-1]-180000)
-    print(timestamp)
-    trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
-    print(host_df)
-    detection(timestamp)
+    # # print(trace_df)
+    # print(host_df)
+    # timestamp = int(trace_df['startTime'].iloc[-1]-180000)
+    # print(timestamp)
+    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
+    # print(host_df)
+    # detection(timestamp)
