@@ -128,15 +128,3 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-Papers
-Donut
-MicroRCA
-Seniors
-TraceAnomaly
-training_data
-sample
-<<<<<<< Updated upstream
-local_data
-=======
-Test
->>>>>>> Stashed changes
