@@ -142,7 +142,7 @@ class RCA():
             res.mask[idx] = True
         if len(anomalies) == 0:
             return 0
-        return np.mean(np.abs(anomalies))
+        return np.nanmean(np.abs(anomalies))
     
     def hesd_trace_detection(self, alpha=0.95, ub=0.02):
         grouped_df = self.trace_data.groupby(['cmdb_id', 'serviceName'])[['startTime','actual_time']]
@@ -150,7 +150,7 @@ class RCA():
 
         self.anomaly_chart = pd.DataFrame()
         for (a, b), value in grouped_df:
-            failure = sum(value['success']==False)*10
+            failure = sum(value['success']==False)*3
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['actual_time'].mean().reset_index()
             result = self.esd_test(value['actual_time'].to_numpy(), alpha=alpha, ub=ub, hybrid=True)
@@ -288,20 +288,13 @@ class RCA():
                 print('Docker network problem')
         else:
             kpi_names = self.db_kpi_names
-            # host_data_subset = host_data.loc[(host_data.cmdb_id == cmdb_id) & (host_data.name.isin(kpi_names))]
-            # results_dict = {}
-            # for kpi, values in host_data_subset.groupby('name')['value']:
-            #     values = list(values)
-            #     score =  esd_test(np.array(values), 0.95, 0.1, True)
-            #     results_dict[kpi] = score
-            # db_connection_limit = [results_dict['Proc_User_Used_Pct'],results_dict['Proc_Used_Pct'],results_dict['Sess_Connect']]
-            # db_connection_limit_score = np.mean(db_connection_limit)
-            # db_close = [results_dict['On_Off_State'],results_dict['tnsping_result_time']]
-            # db_close_score = np.mean(db_close)
-            # if db_connection_limit_score > db_close_score:
-            #     kpi_names = kpi_names[:3]
-            # else:
-            #     kpi_names = kpi_names[3:]
+            host_data_subset = self.host_data.loc[(self.host_data.cmdb_id == cmdb_id) & (self.host_data.name=='On_Off_State')]
+            print(np.array(host_data_subset.value))
+            check = any(host_data_subset.value<1)
+            if check:
+                kpi_names = kpi_names[3:]
+            else:
+                kpi_names = kpi_names[:3]
 
         return kpi_names
 
@@ -314,14 +307,7 @@ class RCA():
         print(dodgy_host_dict)
         if n < 1:
             return None
-        if n == 1:
-            KPIs = self.find_anomalous_kpi(
-                dodgy_hosts[0], local_abnormal[dodgy_hosts[0]])
-            to_be_sent = []
-            for KPI in KPIs:
-                to_be_sent.append([dodgy_hosts[0], KPI])
-            return to_be_sent
-        if n >= 2:
+        else:
             to_be_sent = []
 
             # create lists containing all the potential os and docker anomalies
@@ -354,7 +340,7 @@ class RCA():
             print('The hosts found do not have appear to have common hosts, hence we take the best one.')
             if 'fly' in dodgy_hosts[0]:
                 # fly remote means it must be os_009
-                KPIs = find_anomalous_kpi('os_009', False)
+                KPIs = self.find_anomalous_kpi('os_009', False)
                 for kpi in KPIs:
                     to_be_sent.append(['os_009', kpi])
                 return to_be_sent
@@ -403,7 +389,7 @@ class RCA():
             return row        
         self.trace_data = self.trace_data.apply(get_actual_time, axis = 1)
 
-        self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote'].copy()
+        # self.trace_data = self.trace_data[self.trace_data['callType'] != 'FlyRemote'].copy()
         self.trace_data = self.trace_data[~(self.trace_data['serviceName'].str.contains('csf', na=True))]
 
         print("Trace processed in ", time.time()-p_time, 'seconds')
