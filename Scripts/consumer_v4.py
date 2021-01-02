@@ -596,7 +596,7 @@ def process_trace(trace_dict):
 #             # trace_list.append()
 
 
-def rcaprocess():
+def rcaprocess(lock):
     '''
     RCA Process
     takes new data then add it into database, remove data more than 20 mins
@@ -615,57 +615,50 @@ def rcaprocess():
 
     global host_df, trace_df, a_time, host_list, trace_dict
     while True:
-        st = time.time()
-        # try:
-        trace = trace_dict.copy()
-        host_l = host_list[:]
-        host_list = []
-        trace_dict = defaultdict(list)
-        trace = process_trace(trace)
+        with lock:
+            st = time.time()
+            # try:
+            trace = trace_dict.copy()
+            host_l = host_list[:]
+            host_list = []
+            trace_dict = defaultdict(list)
+            trace = process_trace(trace)
 
-        timestamp = time.time()*1000
+            timestamp = time.time()*1000
 
-        # print(trace)
-        trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
-        host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
+            # print(trace)
+            trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
+            host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
 
-        t = time.time()
-        t_df = pd.DataFrame(trace)
-        h_df = pd.DataFrame(host_l)
+            t = time.time()
+            t_df = pd.DataFrame(trace)
+            h_df = pd.DataFrame(host_l)
 
-        trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
-        host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+            trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
+            host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
 
-        trace_df = trace_df[~(trace_df['serviceName'].str.contains('csf', na=True))]
+            trace_df = trace_df[~(trace_df['serviceName'].str.contains('csf', na=True))]
 
-        print('Time to add new data: ', (time.time()-t))
+            print('Time to add new data: ', (time.time()-t))
 
-        # print('t_df is printed below:')
-        # print(t_df)
+            print('host_df.tail(1) is printed below:')
+            print(host_df.tail(1))
+            print('trace_df.tail(1) is printed below:')
+            print(trace_df.tail(1))
 
-        print('host_df.tail(1) is printed below:')
-        print(host_df.tail(1))
-        print('trace_df.tail(1) is printed below:')
-        print(trace_df.tail(1))
+            if (time.time() - a_time) >= 600:
+                tmp_time = time.time()
+                result = detection(timestamp)
+                if result:
+                    a_time = tmp_time
 
-        if (time.time() - a_time) >= 600:
-            tmp_time = time.time()
-            result = detection(timestamp)
-            if result:
-                a_time = tmp_time
+            print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
+                (time.time() - st) + ' seconds.')
 
-        print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
-            (time.time() - st) + ' seconds.')
-        # except:
-        #     print("Some error in RCA process happened")
-        #     break
-        #     # sleeping_time = 60 - (time.time() - st)
-        #     # continue
-
-        sleeping_time = 60 - (time.time() - st)
-        print('RCA just ran, sleeping for %d seconds' % sleeping_time)
-        if sleeping_time > 0:
-            time.sleep(sleeping_time)
+            sleeping_time = 60 - (time.time() - st)
+            print('RCA just ran, sleeping for %d seconds' % sleeping_time)
+            if sleeping_time > 0:
+                time.sleep(sleeping_time)
 
 
 def submit(ctx):
@@ -703,8 +696,10 @@ def main():
     a_time = time.time()
     host_list = []
     trace_dict = defaultdict(list)
+
+    lock = Lock()
     
-    worker = Thread(target=rcaprocess)
+    worker = Thread(target=rcaprocess, args = (lock,))
     worker.setDaemon(True)
     worker.start()
         
