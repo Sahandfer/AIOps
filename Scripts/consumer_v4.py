@@ -55,7 +55,7 @@ class RCA():
               (time.time() - overall_start_time) + ' seconds.')
         return output
 
-    def esd_test_statistics(self, x):
+    def esd_test_statistics(self, x, hybrid=True):
         '''
         Compute the location and dispersion sample statistics used to carry out the ESD test.
 
@@ -63,11 +63,16 @@ class RCA():
 
         Output: the two statistics used to carry out ESD
         '''
-        location = np.ma.median(x)
-        dispersion = np.ma.median(np.abs(x - location))
+        if hybrid:
+            location = np.ma.median(x) # Median
+            dispersion = np.ma.median(np.abs(x - np.median(x))) # Median Absolute Deviation
+        else:  
+            location = np.ma.mean(x) # Mean
+            dispersion = np.ma.std(x) # Standard Deviation
+            
         return location, dispersion
 
-    def esd_test(self, x, alpha=0.95, ub=0.499):
+    def esd_test(self, x, alpha=0.95, ub=0.499, hybrid=True):
         '''
         Carries out the Extreme Studentized Deviate(ESD) test which can be used to detect one or more outliers present in the timeseries
 
@@ -89,7 +94,7 @@ class RCA():
         anomalies = []
         med = np.median(x)
         for i in range(1, k+1):
-            location, dispersion = self.esd_test_statistics(res)
+            location, dispersion = self.esd_test_statistics(res, hybrid)
             tmp = np.abs(res - location) / dispersion
             idx = np.argmax(tmp)  # Index of the test statistic
             test_statistic = tmp[idx]
@@ -120,7 +125,7 @@ class RCA():
             failure = sum(value['success'] == False)*3
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['elapsedTime'].mean().reset_index()
-            result = self.esd_test(value['elapsedTime'].to_numpy(), alpha=alpha, ub=ub)
+            result = self.esd_test(value['elapsedTime'].to_numpy(), alpha=alpha, ub=ub, hybrid=False)
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
@@ -388,16 +393,17 @@ def detection(timestamp):
     '''
     global host_df, trace_df
     print('Starting Anomaly Detection')
-    startTime = timestamp - 1200000  # 20 minutes before anomaly
+    # startTime = timestamp - 1200000  # 20 minutes before anomaly
 
-    trace_df_temp = trace_df[(trace_df['startTime'] >= startTime) &
-                             (trace_df['startTime'] <= timestamp)]
-    host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
-                           (host_df['timestamp'] <= timestamp)]
-    if (len(trace_df_temp) == 0) or (len(host_df_temp) == 0):
+    # trace_df_temp = trace_df[(trace_df['startTime'] >= startTime) &
+    #                          (trace_df['startTime'] <= timestamp)]
+    # host_df_temp = host_df[(host_df['timestamp'] >= startTime) &
+    #                        (host_df['timestamp'] <= timestamp)]
+
+    if (len(host_df) == 0) or (len(trace_df) == 0):
         print('Error: empty dataframe')
 
-    rca_temp = RCA(trace_data=trace_df_temp, host_data=host_df_temp, alpha=0.99, ub=0.1)
+    rca_temp = RCA(trace_data=trace_df, host_data=host_df, alpha=0.99, ub=0.1)
     results_to_send_off = rca_temp.run()
 
     print('Anomaly Detection Done.')
@@ -419,19 +425,28 @@ def process_trace(trace_dict):
     '''
     trace_list = []
     for trace in trace_dict.values():
-        child_time = defaultdict(float)
+        child_time = defaultdict(int)
         parent_service = {}
         for element in trace:
-            child_time[element['pid']] += element['elapsedTime']
+            child_time[element['pid']] += int(element['elapsedTime'])
             if element['callType'] == 'RemoteProcess':
                 parent_service[element['pid']] = element['cmdb_id']
 
+        # print('filter:', len(filter(lambda x: x['id'] in child_time.keys(), trace)))
         for element in filter(lambda x: x['id'] in child_time, trace):
-            element['elapsedTime'] -= child_time[element['id']]
+            # print('elapsedTime, child_time  = ', element['elapsedTime'], child_time[element['id']])
+            element['elapsedTime'] = int(element['elapsedTime']) - child_time[element['id']]
+            # print('after elapsedTime = ', element['elapsedTime'])
             child_time.pop(element['id'])
+            if element['callType'] == 'CSF':
+                element['serviceName'] = parent_service.get(element['id'], None)
 
+        child_time.pop('None', None)
         if len(child_time) == 0:
+            # print('trace = ', trace)
             trace_list.extend(trace)
+    # print('trace_list = ', trace_list[:10])
+    # print('len=0, tracelist = ', trace_list)
     return trace_list
 
 
@@ -579,7 +594,7 @@ def process_trace(trace_dict):
 #             # trace_list.append()
 
 
-def rcaprocess(lock):
+def rcaprocess():
     '''
     RCA Process
     takes new data then add it into database, remove data more than 20 mins
@@ -595,40 +610,53 @@ def rcaprocess(lock):
 
     Output: None
     '''
+
     global host_df, trace_df, a_time, host_list, trace_dict
     while True:
         st = time.time()
-        try:
-            with lock:
-                trace = process_trace(trace_dict)
-                timestamp = time.time()
+        # try:
+        trace = trace_dict.copy()
+        trace = process_trace(trace)
+        host_l = host_list[:]
+        host_list = []
+        trace_dict = defaultdict(list)
 
-                # print(trace)
-                trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
-                host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
+        timestamp = time.time()*1000
 
-                t = time.time()
-                t_df = pd.DataFrame(trace)
-                h_df = pd.DataFrame(host_list)
+        # print(trace)
+        trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
+        host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
 
-                trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
-                host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+        t = time.time()
+        t_df = pd.DataFrame(trace)
+        h_df = pd.DataFrame(host_l)
 
-                print('Time to add new data: ', (time.time()-t))
+        trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
+        host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
 
-                print('host_df.tail(1) is printed below:')
-                print(host_df.tail(1))
-                print('trace_df.tail(1) is printed below:')
-                print(trace_df.tail(1))
+        print('Time to add new data: ', (time.time()-t))
 
-                if (time.time() - a_time) >= 600:
-                    tmp_time = time.time()
-                    result = detection(timestamp)
-                    if result:
-                        a_time = tmp_time
-        except:
-            print("Some error in RCA process happened")
-            continue
+        # print('t_df is printed below:')
+        # print(t_df)
+
+        print('host_df.tail(1) is printed below:')
+        print(host_df.tail(1))
+        print('trace_df.tail(1) is printed below:')
+        print(trace_df.tail(1))
+
+        if (time.time() - a_time) >= 600:
+            tmp_time = time.time()
+            result = detection(timestamp)
+            if result:
+                a_time = tmp_time
+
+        print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
+            (time.time() - st) + ' seconds.')
+        # except:
+        #     print("Some error in RCA process happened")
+        #     break
+        #     # sleeping_time = 60 - (time.time() - st)
+        #     # continue
 
         host_list = []
         trace_dict = defaultdict(list)
@@ -673,9 +701,12 @@ def main():
 
     a_time = time.time()
     host_list = []
-    lock = Lock()
-    Thread(target=rcaprocess, args=(lock)).start()
     trace_dict = defaultdict(list)
+    
+    worker = Thread(target=rcaprocess)
+    worker.setDaemon(True)
+    worker.start()
+        
     print('Running under Version 4 of consumer.py')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
@@ -692,8 +723,9 @@ def main():
 
         # Trace data
         else:  # message.topic == 'trace'
-            trace_data = Trace(data)
-            trace_dict[trace_data['traceId']].append(trace_data)
+            if data['callType'] != 'JDBC':
+                trace_data = Trace(data)
+                trace_dict[trace_data['traceId']].append(trace_data)
 
 
 if __name__ == '__main__':
