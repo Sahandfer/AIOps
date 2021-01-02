@@ -48,6 +48,9 @@ class RCA():
         self.local_initiate()
         output = self.find_anomalous_hosts()
 
+        if not output is None:
+            print(self.anomaly_chart.to_dict())
+
         print('The output to send to the server is: ' +
               colored(str(output), 'magenta'))
 
@@ -129,7 +132,7 @@ class RCA():
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
-        print(self.anomaly_chart)
+        # print(self.anomaly_chart)
 
         # import networkx as nx
         # import matplotlib.pyplot as plt
@@ -156,7 +159,7 @@ class RCA():
         # nx.draw_networkx(dg, positions, node_size = 5500, node_color = '#00BFFF')
         # plt.show()
 
-        print(self.anomaly_chart.to_dict())
+        # print(self.anomaly_chart.to_dict())
         return self.anomaly_chart
 
     def local_initiate(self):
@@ -188,7 +191,8 @@ class RCA():
         table = self.anomaly_chart.copy()
         # get a threshold. Either a qarter of the max value in the entire table or the min_threshold value
         threshold = max(0.2 * table.stack().max(), min_threshold)
-        print(threshold)
+        print('The largest value in the anomaly chart is: %f' % table.stack().max())
+        print('The threshold is: %f' % threshold)
 
         local_abnormal = {}
         # these dictionaries store the number of anomalies in the rows/columns of a host respectively
@@ -277,11 +281,9 @@ class RCA():
             else:
                 # if the self calling function is not abnormal, it is a network error
                 kpi_names = [None]
-                print('Docker network problem')
         else:
             kpi_names = self.db_kpi_names
             host_data_subset = self.host_data.loc[(self.host_data.cmdb_id == cmdb_id) & (self.host_data.name == 'On_Off_State')]
-            print(np.array(host_data_subset.value))
             check = any(host_data_subset.value < 1)
             if check:
                 kpi_names = kpi_names[3:]
@@ -330,6 +332,7 @@ class RCA():
                         return to_be_sent
                 # if we reach here, its not a db_003, so it might be an os_00x
                 c = list(itertools.combinations(docker, 2))
+                print('The combinations of docker hosts are printed below:')
                 print(c)
                 for a, b in c:
                     shared_host = self.docker_lookup_table[a]
@@ -338,7 +341,6 @@ class RCA():
                             shared_host, False)
                         return to_be_sent
 
-            print('The hosts found do not have appear to have common hosts, hence we take the best one.')
             if 'fly' in dodgy_hosts[0]:
                 # fly remote means it must be os_009
                 to_be_sent = self.find_anomalous_kpi('os_009', False)
@@ -616,10 +618,10 @@ def rcaprocess():
         st = time.time()
         # try:
         trace = trace_dict.copy()
-        trace = process_trace(trace)
         host_l = host_list[:]
         host_list = []
         trace_dict = defaultdict(list)
+        trace = process_trace(trace)
 
         timestamp = time.time()*1000
 
@@ -633,6 +635,8 @@ def rcaprocess():
 
         trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
         host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+
+        trace_df = trace_df[~(trace_df['serviceName'].str.contains('csf', na=True))]
 
         print('Time to add new data: ', (time.time()-t))
 
@@ -657,9 +661,6 @@ def rcaprocess():
         #     break
         #     # sleeping_time = 60 - (time.time() - st)
         #     # continue
-
-        host_list = []
-        trace_dict = defaultdict(list)
 
         sleeping_time = 60 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
