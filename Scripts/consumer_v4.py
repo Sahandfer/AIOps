@@ -6,9 +6,7 @@ Example for RCAing like a B0$$
 '''
 import requests
 import json
-
 from kafka import KafkaConsumer
-
 import itertools
 import pickle
 import time
@@ -21,6 +19,9 @@ from collections import defaultdict
 
 
 class RCA():
+    '''
+    Root Cause Analysis class for detecting the root cause
+    '''
     def __init__(self, trace_data, host_data, alpha=0.99, ub=0.1, take_minute_averages_of_trace_data=True, division_milliseconds=60000):
         self.trace_data = trace_data
         self.host_data = host_data
@@ -31,18 +32,21 @@ class RCA():
         self.division_milliseconds = division_milliseconds
 
     def run(self):
-        # self.trace_processing()
+        '''
+        Runs RCA and gets the output to send to the server.
 
+        Output: list of anomalies/None to be sent off to server
+        '''
+        overall_start_time = time.time()
         print('Running RCA on %d trace data rows and %d host data rows' %
               (len(self.trace_data), len(self.host_data)))
-        overall_start_time = time.time()
 
         print('Computing for anomaly score chart...')
         self.hesd_trace_detection(alpha=self.alpha, ub=self.ub)
         print('Score chart computed!')
 
         self.local_initiate()
-        output = self.find_anomalous_rows()
+        output = self.find_anomalous_hosts()
 
         print('The output to send to the server is: ' +
               colored(str(output), 'magenta'))
@@ -52,34 +56,37 @@ class RCA():
         return output
 
     def esd_test_statistics(self, x):
-        """
+        '''
         Compute the location and dispersion sample statistics used to carry out the ESD test.
-        """
+
+        x : List, array or series containing the time series data
+
+        Output: the two statistics used to carry out ESD
+        '''
         location = np.ma.median(x)
         dispersion = np.ma.median(np.abs(x - location))
         return location, dispersion
 
     def esd_test(self, x, alpha=0.95, ub=0.499):
-        """
+        '''
         Carries out the Extreme Studentized Deviate(ESD) test which can be used to detect one or more outliers present in the timeseries
 
         x      : List, array, or series containing the time series
         freq   : Int that gives the number of periods per cycle (7 for week, 12 for monthly, etc)
         alpha  : Confidence level in detecting outliers
         ub     : Upper bound on the fraction of datapoints which can be labeled as outliers (<=0.499)
-        hybrid : Whether to use the robust statistics (median, median absolute error) or the non-robust versions (mean, standard deviation) to test for anomalies
-        """        
+        
+        Output : The score of a call over the past 20 mins of data
+        '''       
         x = [p for p in x if p==p]
         nobs = len(x)
         if ub > 0.4999:
             ub = 0.499
         # Maximum number of anomalies. At least 1 anomaly must be tested.
         k = max(int(np.floor(ub * nobs)), 1)
-
-        # Carry out the esd test k times
         # The "ma" structure allows masking of values to exclude the elements from any calculation
         res = np.ma.array(x, mask=False)
-        anomalies = []  # returns the indices of the found anomalies
+        anomalies = []
         med = np.median(x)
         for i in range(1, k+1):
             location, dispersion = self.esd_test_statistics(res)
@@ -90,13 +97,22 @@ class RCA():
             critical_value = (n - i) * t.ppf(alpha, n - i - 1) / np.sqrt((n - i - 1 + np.power(t.ppf(alpha, n - i - 1), 2)) * (n - i - 1))
             if test_statistic > critical_value:
                 anomalies.append((x[idx]-med) / med)
-                # anomalies.append(test_statistic)
             res.mask[idx] = True
         if len(anomalies) == 0:
             return 0
         return np.nanmean(np.abs(anomalies))
 
     def hesd_trace_detection(self, alpha=0.95, ub=0.02):
+        '''
+        Hybrid ESD Detection
+        Use Hybrid ESD on the trace data to create the anomaly chart.
+        Takes averages over 1 minute intervals for the ESD score.
+
+        alpha : alpha value for the ESD
+        ub    : ub value for ESD
+
+        Output: The anomaly chart table (pd.DataFrame())
+        '''
         grouped_df = self.trace_data.groupby(['cmdb_id', 'serviceName'])[['startTime', 'elapsedTime']]
 
         self.anomaly_chart = pd.DataFrame()
@@ -139,6 +155,9 @@ class RCA():
         return self.anomaly_chart
 
     def local_initiate(self):
+        '''
+        Sets up various lists used later.
+        '''
         self.dockers = ['docker_001', 'docker_002', 'docker_003', 'docker_004',
                         'docker_005', 'docker_006', 'docker_007', 'docker_008']
         self.docker_hosts = ['os_017', 'os_018', 'os_019', 'os_020']
@@ -151,9 +170,18 @@ class RCA():
         for i in range(len(self.dockers)):
             self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
 
-    def find_anomalous_rows(self, min_threshold=10):
+    def find_anomalous_hosts(self, min_threshold=10):
+        '''
+        Find Any Anomalous Hosts
+        Searches the anomaly chart for the hosts most likely to be causing the anomaly.
+        min_threshold: Minimum threshold value for the search. The threshold is the
+                       value over which entries are considered anomalous
+
+        Output       : dictionary of anomalous hosts and a dictionary that states if each
+                       host has local anomalous behaviour (used for docker hosts)
+        '''
         table = self.anomaly_chart.copy()
-        # get a threshold. either a qarter of the max value in the entire table or the min_threshold value
+        # get a threshold. Either a qarter of the max value in the entire table or the min_threshold value
         threshold = max(0.2 * table.stack().max(), min_threshold)
         print(threshold)
 
@@ -222,6 +250,16 @@ class RCA():
         return output
 
     def find_anomalous_kpi(self, cmdb_id,  local_abnormal):
+        '''
+        Find the KPIs Responsible for the Anomaly
+        Given an anomalous host, return the root cause KPIs for that host
+        in the output format specified by the project.
+        cmdb_id        : the cmdb_id of the host
+        local_abnormal : boolean indicating if (for docker hosts) the anomaly is
+                         on local calls or not
+
+        output         : list to send off to server
+        '''
         # two inputs, cmdb_id and local_abnormal. cmdb_id is the host we sent to server, local_abnormal is a boolean used for 'docker' anomalies.
         kpi_names = []
         if 'os' in cmdb_id:
@@ -252,6 +290,17 @@ class RCA():
         return to_be_sent
 
     def localize(self, dodgy_host_dict, local_abnormal):
+        '''
+        Localize the Anomalous Hosts
+        Narrow down the anomalous hosts given by 'find_anomalous_hosts' and look for 
+        similar hosts or dependancies
+        dodgy_host_dict : dictionary in the format {host: score}
+        local_abnormal  : dictionary in the format {host: boolean} where the boolean
+                          indicates if (for docker hosts) the anomaly occurs on local
+                          calls
+        
+        output          : result to send off to server
+        '''
         dodgy_hosts = list(dodgy_host_dict.keys())
         n = len(dodgy_host_dict)
         print('We found %d anomalies, printed below:' % n)
@@ -333,6 +382,10 @@ class Trace():  # pylint: disable=invalid-name,too-many-instance-attributes,too-
 
 
 def detection(timestamp):
+    '''
+    Anomaly Detection
+    Takes the last 20 mins of data and runs RCA. Then sends the result off to the server.
+    '''
     global host_df, trace_df
     print('Starting Anomaly Detection')
     startTime = timestamp - 1200000  # 20 minutes before anomaly
@@ -357,7 +410,8 @@ def detection(timestamp):
 def process_trace(trace_dict):
     '''
     Process Trace Data
-    Input: Dictionary of Traces with format {traceId: LIST OF ELEMENTS OF TRACE}
+    trace_dict: Dictionary of Traces with format {traceId: LIST OF ELEMENTS OF TRACE}
+
     Output: List of processed traces
     (processed elapseTime and servicename of CSF into child's cmdbid)
     # CSF's child is always RemoteProcess
@@ -381,193 +435,56 @@ def process_trace(trace_dict):
     return trace_list
 
 
-def rcaprocess(trace_dict, host, timestamp, lock):
-    '''
-    RCA Process
-    takes new data then add it into database, remove data more than 20 mins
-    this function also calls the anomaly detection function to run anomaly detection
-    Wont run detection if last anomalous is within 10 mins
+# def rcaprocess(trace_dict, host, timestamp, lock):
+    # '''
+    # RCA Process
+    # takes new data then add it into database, remove data more than 20 mins
+    # this function also calls the anomaly detection function to run anomaly detection
+    # Wont run detection if last anomalous is within 10 mins
 
-    # IMPORTANT FIXME start detection after 20 mins of starting
+    # # IMPORTANT FIXME start detection after 20 mins of starting
 
-    # FIXME get rid dataframe, we can make a dictionary like 
-        # { (cmdb_id, serviceName): [List of 20 elements (each element contains 1 min of data)]}
+    # # FIXME get rid dataframe, we can make a dictionary like 
+    #     # { (cmdb_id, serviceName): [List of 20 elements (each element contains 1 min of data)]}
 
-    Input:  trace_dict: Dictionary with format {traceID: LIST OF ELEMENTS OF TRACE}
-            host: List of HOST DATA
-            timestamp: current time
-            lock: Thread lock prevent different threads accessing data at the same time
+    # Input:  trace_dict: Dictionary with format {traceID: LIST OF ELEMENTS OF TRACE}
+    #         host: List of HOST DATA
+    #         timestamp: current time
+    #         lock: Thread lock prevent different threads accessing data at the same time
 
-    Output: None
-    '''
-    global host_df, trace_df, a_time
+    # Output: None
+    # '''
+#     global host_df, trace_df, a_time
 
-    trace = process_trace(trace_dict)
+#     trace = process_trace(trace_dict)
 
-    # print(trace)
-    trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
-    host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
+#     # print(trace)
+#     trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
+#     host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
 
-    t = time.time()
-    t_df = pd.DataFrame(trace)
-    h_df = pd.DataFrame(host)
+#     t = time.time()
+#     t_df = pd.DataFrame(trace)
+#     h_df = pd.DataFrame(host)
 
-    trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
-    host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+#     trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
+#     host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
 
-    print('Time to add new data: ', (time.time()-t))
+#     print('Time to add new data: ', (time.time()-t))
 
-    print('host_df.tail(1) is printed below:')
-    print(host_df.tail(1))
-    print('trace_df.tail(1) is printed below:')
-    print(trace_df.tail(1))
+#     print('host_df.tail(1) is printed below:')
+#     print(host_df.tail(1))
+#     print('trace_df.tail(1) is printed below:')
+#     print(trace_df.tail(1))
 
-    with lock:
-        if (time.time() - a_time) >= 600:
-            tmp_time = time.time()
-            print("oops")
-            # detection(timestamp)
-            result = detection(timestamp)
-            print('Anomaly at: ', timestamp)
-            if result:
-                a_time = tmp_time
-
-
-def submit(ctx):
-    '''Submit answer into stdout'''
-    # print(json.dumps(data))
-    assert (isinstance(ctx, list))
-    for tp in ctx:
-        assert(isinstance(tp, list))
-        assert(len(tp) == 2)
-        assert(isinstance(tp[0], str))
-        assert(isinstance(tp[1], str) or (tp[1] is None))
-    data = {'content': json.dumps(ctx)}
-    r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
-
-
-host_df = pd.DataFrame(
-    columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-                                 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-
-a_time = 0.0
-
-
-def main():
-    '''Consume data and react'''
-    assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
-
-    global host_df, trace_df, esb_anal, a_time
-
-    host_df = pd.DataFrame(
-        columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-    trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-                                     'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-
-    a_time = 0.0
-
-    lock = Lock()
-
-    print('Running under Sami\'s update 3')
-
-    print('Started receiving data! Fingers crossed...')
-
-    trace_list = []
-
-    host_list = []
-
-    trace_dict = defaultdict(list)
-
-    for message in CONSUMER:
-        data = json.loads(message.value.decode('utf8'))
-
-        # Host data
-        if message.topic == 'platform-index':
-            # for stack in data['body']:
-            # for item in data['body'][stack]:
-            for item in data['body']['db_oracle_11g']:
-                host_list.append(item)
-
-        # ESB data
-        elif message.topic == 'business-index':
-            timestamp = data['startTime']
-
-            try:
-                Thread(target=rcaprocess, args=(trace_dict, host_list, timestamp, lock)).start()
-            except:
-                print("Error: unable to start rcaprocess")
-
-            trace_list = []
-            host_list = []
-            trace_dict = defaultdict(list)
-
-        # Trace data
-        else:  # message.topic == 'trace'
-            # print(data)
-            trace_data = Trace(data)
-            trace_dict[trace_data['traceId']].append(trace_data)
-
-            # if trace_data['callType'] == 'OSB':
-            #     if trace_dict.get(data['pid'], 0) == 0:
-            #         trace_dict[data['id']] = trace_data
-            #     else:
-            #         parent_trace = trace_dict[data['pid']]
-            #         parent_trace['elapsedTime'] -= trace_data['elapsedTime']
-
-            # elif trace_data['callType'] == 'LOCAL':
-            #     if trace_dict.get(trace_data['pid'], 0) == 0:
-            #         tmp_trace_dict[trace_data['pid']] =
-
-            # elif trace_data['callType'] == 'RemoteProcess':
-            #     tmp_trace_dict
-
-            # trace_list.append()
-
-
-# def rcaprocess(lock):
-#     global host_df, trace_df, a_time, host_list, trace_dict
-#     while True:
-#         st = time.time()
-#         try:
-#             with lock:
-#                 trace = process_trace(trace_dict)
-#                 timestamp = time.time()
-
-#                 # print(trace)
-#                 trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
-#                 host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
-
-#                 t = time.time()
-#                 t_df = pd.DataFrame(trace)
-#                 h_df = pd.DataFrame(host_list)
-
-#                 trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
-#                 host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
-
-#                 print('Time to add new data: ', (time.time()-t))
-
-#                 print('host_df.tail(1) is printed below:')
-#                 print(host_df.tail(1))
-#                 print('trace_df.tail(1) is printed below:')
-#                 print(trace_df.tail(1))
-
-#                 if (time.time() - a_time) >= 600:
-#                     tmp_time = time.time()
-#                     result = detection(timestamp)
-#                     if result:
-#                         a_time = tmp_time
-#         except:
-#             print("Some error in RCA process happened")
-#             continue
-
-#         host_list = []
-#         trace_dict = defaultdict(list)
-
-#         sleeping_time = 60 - (time.time() - st)
-#         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
-#         if sleeping_time > 0:
-#             time.sleep(sleeping_time)
+#     with lock:
+#         if (time.time() - a_time) >= 600:
+#             tmp_time = time.time()
+#             print("oops")
+#             # detection(timestamp)
+#             result = detection(timestamp)
+#             print('Anomaly at: ', timestamp)
+#             if result:
+#                 a_time = tmp_time
 
 
 # def submit(ctx):
@@ -581,60 +498,202 @@ def main():
 #         assert(isinstance(tp[1], str) or (tp[1] is None))
 #     data = {'content': json.dumps(ctx)}
 #     r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
-#     print('result sent')
 
 
 # host_df = pd.DataFrame(
 #     columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
 # trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
 #                                  'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-                                 
+
 # a_time = 0.0
-# host_list = []
-# trace_dict = defaultdict(list)
 
 
 # def main():
 #     '''Consume data and react'''
 #     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-#     global host_df, trace_df, a_time, host_list, trace_dict
+#     global host_df, trace_df, esb_anal, a_time
 
 #     host_df = pd.DataFrame(
 #         columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
 #     trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
 #                                      'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
 
-#     a_time = time.time()
-
-#     host_list = []
+#     a_time = 0.0
 
 #     lock = Lock()
 
-#     Thread(target=rcaprocess, args=(lock)).start()
-
-#     trace_dict = defaultdict(list)
-
-#     print('Running under Version 4 of consumer.py')
+#     print('Running under Sami\'s update 3')
 
 #     print('Started receiving data! Fingers crossed...')
+
+#     trace_list = []
+
+#     host_list = []
+
+#     trace_dict = defaultdict(list)
 
 #     for message in CONSUMER:
 #         data = json.loads(message.value.decode('utf8'))
 
 #         # Host data
 #         if message.topic == 'platform-index':
+#             # for stack in data['body']:
+#             # for item in data['body'][stack]:
 #             for item in data['body']['db_oracle_11g']:
 #                 host_list.append(item)
 
 #         # ESB data
 #         elif message.topic == 'business-index':
-#             continue
+#             timestamp = data['startTime']
+
+#             try:
+#                 Thread(target=rcaprocess, args=(trace_dict, host_list, timestamp, lock)).start()
+#             except:
+#                 print("Error: unable to start rcaprocess")
+
+#             trace_list = []
+#             host_list = []
+#             trace_dict = defaultdict(list)
 
 #         # Trace data
 #         else:  # message.topic == 'trace'
+#             # print(data)
 #             trace_data = Trace(data)
 #             trace_dict[trace_data['traceId']].append(trace_data)
+
+#             # if trace_data['callType'] == 'OSB':
+#             #     if trace_dict.get(data['pid'], 0) == 0:
+#             #         trace_dict[data['id']] = trace_data
+#             #     else:
+#             #         parent_trace = trace_dict[data['pid']]
+#             #         parent_trace['elapsedTime'] -= trace_data['elapsedTime']
+
+#             # elif trace_data['callType'] == 'LOCAL':
+#             #     if trace_dict.get(trace_data['pid'], 0) == 0:
+#             #         tmp_trace_dict[trace_data['pid']] =
+
+#             # elif trace_data['callType'] == 'RemoteProcess':
+#             #     tmp_trace_dict
+
+#             # trace_list.append()
+
+
+def rcaprocess(lock):
+    '''
+    RCA Process
+    takes new data then add it into database, remove data more than 20 mins
+    this function also calls the anomaly detection function to run anomaly detection
+    Wont run detection if last anomalous is within 10 mins
+
+    # IMPORTANT FIXME start detection after 20 mins of starting
+
+    # FIXME get rid dataframe, we can make a dictionary like 
+        # { (cmdb_id, serviceName): [List of 20 elements (each element contains 1 min of data)]}
+
+    lock: Thread lock prevent different threads accessing data at the same time
+
+    Output: None
+    '''
+    global host_df, trace_df, a_time, host_list, trace_dict
+    while True:
+        st = time.time()
+        try:
+            with lock:
+                trace = process_trace(trace_dict)
+                timestamp = time.time()
+
+                # print(trace)
+                trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
+                host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
+
+                t = time.time()
+                t_df = pd.DataFrame(trace)
+                h_df = pd.DataFrame(host_list)
+
+                trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
+                host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+
+                print('Time to add new data: ', (time.time()-t))
+
+                print('host_df.tail(1) is printed below:')
+                print(host_df.tail(1))
+                print('trace_df.tail(1) is printed below:')
+                print(trace_df.tail(1))
+
+                if (time.time() - a_time) >= 600:
+                    tmp_time = time.time()
+                    result = detection(timestamp)
+                    if result:
+                        a_time = tmp_time
+        except:
+            print("Some error in RCA process happened")
+            continue
+
+        host_list = []
+        trace_dict = defaultdict(list)
+
+        sleeping_time = 60 - (time.time() - st)
+        print('RCA just ran, sleeping for %d seconds' % sleeping_time)
+        if sleeping_time > 0:
+            time.sleep(sleeping_time)
+
+
+def submit(ctx):
+    '''Submit answer into stdout'''
+    # print(json.dumps(data))
+    assert (isinstance(ctx, list))
+    for tp in ctx:
+        assert(isinstance(tp, list))
+        assert(len(tp) == 2)
+        assert(isinstance(tp[0], str))
+        assert(isinstance(tp[1], str) or (tp[1] is None))
+    data = {'content': json.dumps(ctx)}
+    r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
+    print('result sent')
+
+
+host_df = pd.DataFrame(columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])                                 
+a_time = 0.0
+host_list = []
+trace_dict = defaultdict(list)
+
+
+def main():
+    '''Consume data and react'''
+    assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
+
+    global host_df, trace_df, a_time, host_list, trace_dict
+
+    host_df = pd.DataFrame(
+        columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
+    trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
+                                     'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
+
+    a_time = time.time()
+    host_list = []
+    lock = Lock()
+    Thread(target=rcaprocess, args=(lock)).start()
+    trace_dict = defaultdict(list)
+    print('Running under Version 4 of consumer.py')
+    print('Started receiving data! Fingers crossed...')
+    for message in CONSUMER:
+        data = json.loads(message.value.decode('utf8'))
+
+        # Host data
+        if message.topic == 'platform-index':
+            for item in data['body']['db_oracle_11g']:
+                host_list.append(item)
+
+        # ESB data
+        elif message.topic == 'business-index':
+            continue
+
+        # Trace data
+        else:  # message.topic == 'trace'
+            trace_data = Trace(data)
+            trace_dict[trace_data['traceId']].append(trace_data)
 
 
 if __name__ == '__main__':
