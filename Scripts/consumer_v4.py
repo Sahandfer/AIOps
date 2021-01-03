@@ -180,7 +180,7 @@ class RCA():
         for i in range(len(self.dockers)):
             self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
 
-    def find_anomalous_hosts(self, min_threshold=15):
+    def find_anomalous_hosts(self, min_threshold=10):
         '''
         Find Any Anomalous Hosts
         Searches the anomaly chart for the hosts most likely to be causing the anomaly.
@@ -203,6 +203,14 @@ class RCA():
         # these dictionaries store the values of the rows/columns of a host respectively
         row_confidence_dict = {}
         column_confidence_dict = {}
+
+        check_for_most_simple_case = sum(np.array(table.stack()) >= threshold)
+        if check_for_most_simple_case == 1:
+            for column in table:
+                for index, row in table.iterrows():
+                    if row[column] >= threshold:
+                        print('Only 1 anomalous value in the table, so we localise on the row name: %s' % index)
+                        return self.find_anomalous_kpi(index, index == column)
 
         for column in table:
             for index, row in table.iterrows():
@@ -250,7 +258,7 @@ class RCA():
             # if there is missing host data, we might miss out anomalies on weird tables. Thus we
             # check the column keys. This code usually does not run, as the set difference is empty.
             final_dict[key] = column_dict[key] * column_confidence_dict[key]
-
+        
         # sort the potential anomalies by their score
         dodgy_hosts = dict(sorted(final_dict.items(), key=lambda item: item[1], reverse=True))
         # filter out unlikely anomalies by taking 10% of the max of the anomaly scores, or 1
@@ -514,7 +522,7 @@ def rcaprocess():
         print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
             (time.time() - st) + ' seconds.')
 
-        sleeping_time = 30 - (time.time() - st)
+        sleeping_time = 120 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
         if sleeping_time > 0:
             time.sleep(sleeping_time)
@@ -589,20 +597,49 @@ if __name__ == '__main__':
     # # '''
 
     # global host_df, trace_df
+    # st = time.time()
+    # asdfasdfasdf = time.time()
 
-    # path = r'D:\\THU Studies\\Advance Network Management\\Project\\Anomaly-detection\\local_data\\noJDBC\\'
-    # trace_df = pd.read_csv(path + 'trace_data_527_db007_onoff.csv')
+    # path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\new_test\\'
+    # trace_df = pd.read_csv(path + 'trace' + '_530_d2_null.csv')
     # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    # host_df = pd.read_csv(path + 'kpi_data_527_db007_onoff.csv')
+    # host_df = pd.read_csv(path + 'kpi' + '_530_d2_null.csv')
     # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
-    # # print(trace_df)
-    # print(host_df)
     # timestamp = int(trace_df['startTime'].iloc[-1])
-    # print(timestamp)
-    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000))]
-    # print(host_df)
-    # detection(timestamp)
+    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1260000)) & (trace_df.startTime <= timestamp)]
+    # trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000)) & (trace_df.startTime <= timestamp)]
+    # host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
+
+    # trace_dict_2 = defaultdict(list)
+
+    # for index, row in trace_df.iterrows():
+    #     trace_dict_2[row['traceId']] = trace_dict_2.get(row['traceId'], [])
+    #     trace_dict_2[row['traceId']].append(row.to_dict())
+
+    # print('done for loop in %f' % (time.time() - asdfasdfasdf))
+
+    # processed = process_trace(trace_dict_2)
+    # t_df = pd.DataFrame(processed)    
+
+    # tttttt = time.time()
+
+    # # trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
+    # # host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
+
+    # t_df = t_df[~(t_df['serviceName'].str.contains('csf', na=True))]
+
+    # trace_df = t_df
+
+    # print('Time to add new data: ', (time.time()-tttttt))
+
+    # result = detection(timestamp)
+
+    # print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
+    #     (time.time() - st) + ' seconds.')
+
+    # sleeping_time = 30 - (time.time() - st)
+    # print('RCA just ran, sleeping for %d seconds' % sleeping_time)
