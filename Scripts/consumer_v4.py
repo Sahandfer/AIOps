@@ -248,7 +248,7 @@ class RCA():
             if key in list(column_dict.keys()):
                 # row_dict now contains the mean count of the number of anomalies in the rows and columns of a host
                 # use integer division to dismiss hosts with only one anomalous non-diagonal value in the table
-                row_dict[key] = (row_dict[key] + column_dict[key]) // 2
+                row_dict[key] = (row_dict[key]*2 + column_dict[key]) // 2
                 row_confidence_dict[key] = (row_confidence_dict[key] + column_confidence_dict[key]) / 2
             # multiply the mean number of anomlies by the score of the rows/columns of a host
             # if the number of anomalies (row_dict[key]) is 0, we get 0.
@@ -403,7 +403,7 @@ def detection(timestamp):
     Anomaly Detection
     Takes the last 20 mins of data and runs RCA. Then sends the result off to the server.
     '''
-    global host_df, trace_df
+    global host_df, trace_df, previous_result
     print('Starting Anomaly Detection')
     # startTime = timestamp - 1200000  # 20 minutes before anomaly
 
@@ -420,10 +420,16 @@ def detection(timestamp):
 
     print('Anomaly Detection Done.')
     if results_to_send_off is None:
+        previous_result = None
         return False
     
-    submit(results_to_send_off)
-    return True
+    if sorted(previous_result) == sorted(results_to_send_off):
+        submit(results_to_send_off)
+        previous_result = None
+        return True
+    else:
+        previous_result = results_to_send_off
+        return False
 
 
 def process_trace(trace_dict):
@@ -523,7 +529,7 @@ def rcaprocess():
         print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
             (time.time() - st) + ' seconds.')
 
-        sleeping_time = 120 - (time.time() - st)
+        sleeping_time = 100 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
         if sleeping_time > 0:
             time.sleep(sleeping_time)
@@ -548,13 +554,14 @@ trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'succes
 a_time = 0.0
 host_list = []
 trace_dict = defaultdict(list)
+previous_result = None
 
 
 def main():
     '''Consume data and react'''
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-    global host_df, trace_df, a_time, host_list, trace_dict
+    global host_df, trace_df, a_time, host_list, trace_dict, previous_result
 
     host_df = pd.DataFrame(
         columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
@@ -564,12 +571,13 @@ def main():
     a_time = time.time()
     host_list = []
     trace_dict = defaultdict(list)
+    previous_result = None
 
     worker = Thread(target=rcaprocess)
     worker.setDaemon(True)
     worker.start()
         
-    print('Running under Version 4 of consumer.py')
+    print('Running under Version 4 of consumer.py update 8pm sunday')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
@@ -602,12 +610,13 @@ if __name__ == '__main__':
     # asdfasdfasdf = time.time()
 
     # path = r'C:\\Users\\spkgy\\OneDrive\\Documents\\Tsinghua\\Advanced Network Management\\Group Project\\new_test\\'
-    # trace_df = pd.read_csv(path + 'trace' + '_530_d2_null.csv')
+    # an_name = '_524_db6_cpu'
+    # trace_df = pd.read_csv(path + 'trace' + an_name + '.csv')
     # # trace_df = trace_df.drop(['actual_time','path'], axis=1)
     # trace_df = trace_df.sort_values(by=['startTime'], ignore_index=True)
     # # trace = trace[trace.startTime < trace.startTime[0]+1260000]
 
-    # host_df = pd.read_csv(path + 'kpi' + '_530_d2_null.csv')
+    # host_df = pd.read_csv(path + 'kpi' + an_name + '.csv')
     # host_df = host_df.sort_values(by=['timestamp'], ignore_index=True)
 
     # timestamp = int(trace_df['startTime'].iloc[-1])
