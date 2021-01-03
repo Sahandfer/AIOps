@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import t
 from termcolor import colored
-from threading import Thread, Lock
+from threading import Thread
 from collections import defaultdict
 
 
@@ -393,7 +393,7 @@ def detection(timestamp):
     Anomaly Detection
     Takes the last 20 mins of data and runs RCA. Then sends the result off to the server.
     '''
-    global host_df, trace_df, previous_answer
+    global host_df, trace_df
     print('Starting Anomaly Detection')
     # startTime = timestamp - 1200000  # 20 minutes before anomaly
 
@@ -411,10 +411,7 @@ def detection(timestamp):
     print('Anomaly Detection Done.')
     if results_to_send_off is None:
         return False
-    if sorted(previous_answer)==sorted(results_to_send_off):
-        return False
     submit(results_to_send_off)
-    previous_answer = results_to_send_off
     return True
 
 
@@ -445,9 +442,10 @@ def process_trace(trace_dict):
             child_time.pop(element['id'])
             if element['callType'] == 'CSF':
                 element['serviceName'] = parent_service.get(element['id'], None)
+                parent_service.pop(element['id'], None)
 
         child_time.pop('None', None)
-        if len(child_time) == 0:
+        if len(child_time) == 0 and len(parent_service) == 0:
             # print('trace = ', trace)
             trace_list.extend(trace)
     # print('trace_list = ', trace_list[:10])
@@ -455,151 +453,7 @@ def process_trace(trace_dict):
     return trace_list
 
 
-# def rcaprocess(trace_dict, host, timestamp, lock):
-    # '''
-    # RCA Process
-    # takes new data then add it into database, remove data more than 20 mins
-    # this function also calls the anomaly detection function to run anomaly detection
-    # Wont run detection if last anomalous is within 10 mins
-
-    # # IMPORTANT FIXME start detection after 20 mins of starting
-
-    # # FIXME get rid dataframe, we can make a dictionary like 
-    #     # { (cmdb_id, serviceName): [List of 20 elements (each element contains 1 min of data)]}
-
-    # Input:  trace_dict: Dictionary with format {traceID: LIST OF ELEMENTS OF TRACE}
-    #         host: List of HOST DATA
-    #         timestamp: current time
-    #         lock: Thread lock prevent different threads accessing data at the same time
-
-    # Output: None
-    # '''
-#     global host_df, trace_df, a_time
-
-#     trace = process_trace(trace_dict)
-
-#     # print(trace)
-#     trace_df = trace_df[(trace_df.startTime >= (timestamp-1200000))]
-#     host_df = host_df[(host_df.timestamp >= (timestamp-1200000))]
-
-#     t = time.time()
-#     t_df = pd.DataFrame(trace)
-#     h_df = pd.DataFrame(host)
-
-#     trace_df = pd.concat([trace_df, t_df], axis=0, ignore_index=True)
-#     host_df = pd.concat([host_df, h_df], axis=0, ignore_index=True)
-
-#     print('Time to add new data: ', (time.time()-t))
-
-#     print('host_df.tail(1) is printed below:')
-#     print(host_df.tail(1))
-#     print('trace_df.tail(1) is printed below:')
-#     print(trace_df.tail(1))
-
-#     with lock:
-#         if (time.time() - a_time) >= 600:
-#             tmp_time = time.time()
-#             print("oops")
-#             # detection(timestamp)
-#             result = detection(timestamp)
-#             print('Anomaly at: ', timestamp)
-#             if result:
-#                 a_time = tmp_time
-
-
-# def submit(ctx):
-#     '''Submit answer into stdout'''
-#     # print(json.dumps(data))
-#     assert (isinstance(ctx, list))
-#     for tp in ctx:
-#         assert(isinstance(tp, list))
-#         assert(len(tp) == 2)
-#         assert(isinstance(tp[0], str))
-#         assert(isinstance(tp[1], str) or (tp[1] is None))
-#     data = {'content': json.dumps(ctx)}
-#     r = requests.post('http://172.21.0.8:8000/standings/submit/', data=json.dumps(data))
-
-
-# host_df = pd.DataFrame(
-#     columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-# trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-#                                  'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-
-# a_time = 0.0
-
-
-# def main():
-#     '''Consume data and react'''
-#     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
-
-#     global host_df, trace_df, esb_anal, a_time
-
-#     host_df = pd.DataFrame(
-#         columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
-#     trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
-#                                      'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
-
-#     a_time = 0.0
-
-#     lock = Lock()
-
-#     print('Running under Sami\'s update 3')
-
-#     print('Started receiving data! Fingers crossed...')
-
-#     trace_list = []
-
-#     host_list = []
-
-#     trace_dict = defaultdict(list)
-
-#     for message in CONSUMER:
-#         data = json.loads(message.value.decode('utf8'))
-
-#         # Host data
-#         if message.topic == 'platform-index':
-#             # for stack in data['body']:
-#             # for item in data['body'][stack]:
-#             for item in data['body']['db_oracle_11g']:
-#                 host_list.append(item)
-
-#         # ESB data
-#         elif message.topic == 'business-index':
-#             timestamp = data['startTime']
-
-#             try:
-#                 Thread(target=rcaprocess, args=(trace_dict, host_list, timestamp, lock)).start()
-#             except:
-#                 print("Error: unable to start rcaprocess")
-
-#             trace_list = []
-#             host_list = []
-#             trace_dict = defaultdict(list)
-
-#         # Trace data
-#         else:  # message.topic == 'trace'
-#             # print(data)
-#             trace_data = Trace(data)
-#             trace_dict[trace_data['traceId']].append(trace_data)
-
-#             # if trace_data['callType'] == 'OSB':
-#             #     if trace_dict.get(data['pid'], 0) == 0:
-#             #         trace_dict[data['id']] = trace_data
-#             #     else:
-#             #         parent_trace = trace_dict[data['pid']]
-#             #         parent_trace['elapsedTime'] -= trace_data['elapsedTime']
-
-#             # elif trace_data['callType'] == 'LOCAL':
-#             #     if trace_dict.get(trace_data['pid'], 0) == 0:
-#             #         tmp_trace_dict[trace_data['pid']] =
-
-#             # elif trace_data['callType'] == 'RemoteProcess':
-#             #     tmp_trace_dict
-
-#             # trace_list.append()
-
-
-def rcaprocess(lock):
+def rcaprocess():
     '''
     RCA Process
     takes new data then add it into database, remove data more than 20 mins
@@ -649,7 +503,7 @@ def rcaprocess(lock):
         print('trace_df.tail(1) is printed below:')
         print(trace_df.tail(1))
 
-        if (time.time() - a_time) >= 600:
+        if (time.time() - a_time) >= 1200:
             tmp_time = time.time()
             result = detection(timestamp)
             if result:
@@ -658,7 +512,7 @@ def rcaprocess(lock):
         print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
             (time.time() - st) + ' seconds.')
 
-        sleeping_time = 60 - (time.time() - st)
+        sleeping_time = 45 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
         if sleeping_time > 0:
             time.sleep(sleeping_time)
@@ -683,14 +537,13 @@ trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'succes
 a_time = 0.0
 host_list = []
 trace_dict = defaultdict(list)
-previous_answer = []
 
 
 def main():
     '''Consume data and react'''
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-    global host_df, trace_df, a_time, host_list, trace_dict, previous_answer
+    global host_df, trace_df, a_time, host_list, trace_dict
 
     host_df = pd.DataFrame(
         columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
@@ -700,8 +553,6 @@ def main():
     a_time = time.time()
     host_list = []
     trace_dict = defaultdict(list)
-
-    previous_answer = []
 
     worker = Thread(target=rcaprocess)
     worker.setDaemon(True)
