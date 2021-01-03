@@ -403,7 +403,7 @@ def detection(timestamp):
     Anomaly Detection
     Takes the last 20 mins of data and runs RCA. Then sends the result off to the server.
     '''
-    global host_df, trace_df
+    global host_df, trace_df, a_time, previous_answer
     print('Starting Anomaly Detection')
     # startTime = timestamp - 1200000  # 20 minutes before anomaly
 
@@ -421,7 +421,10 @@ def detection(timestamp):
     print('Anomaly Detection Done.')
     if results_to_send_off is None:
         return False
+    if sorted(previous_answer) == sorted(results_to_send_off) and (time.time()-a_time) < 30*60:
+        return False
     submit(results_to_send_off)
+    previous_answer = results_to_send_off
     return True
 
 
@@ -547,13 +550,14 @@ trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'succes
 a_time = 0.0
 host_list = []
 trace_dict = defaultdict(list)
+previous_answer = []
 
 
 def main():
     '''Consume data and react'''
     assert AVAILABLE_TOPICS <= CONSUMER.topics(), 'Please contact admin'
 
-    global host_df, trace_df, a_time, host_list, trace_dict
+    global host_df, trace_df, a_time, host_list, trace_dict, previous_answer
 
     host_df = pd.DataFrame(
         columns=['itemid', 'name', 'bomc_id', 'timestamp', 'value', 'cmdb_id'])
@@ -562,6 +566,7 @@ def main():
 
     a_time = time.time()
     host_list = []
+    previous_answer = []
     trace_dict = defaultdict(list)
 
     worker = Thread(target=rcaprocess)
