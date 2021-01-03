@@ -130,7 +130,9 @@ class RCA():
                 failure = sum(value['success']==False)*5
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['elapsedTime'].mean().reset_index()
-            result = self.esd_test(value['elapsedTime'].to_numpy(), alpha=alpha, ub=ub, hybrid=False)
+            value = value['elapsedTime'].to_numpy()
+            value = value[:-1]
+            result = self.esd_test(value, alpha=alpha, ub=ub, hybrid=False)
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
@@ -528,7 +530,7 @@ def rcaprocess():
         print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
             (time.time() - st) + ' seconds.')
 
-        sleeping_time = 100 - (time.time() - st)
+        sleeping_time = 60 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
         if sleeping_time > 0:
             time.sleep(sleeping_time)
@@ -567,7 +569,7 @@ def main():
     trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime',
                                      'success', 'traceId', 'id', 'pid', 'cmdb_id', 'serviceName'])
 
-    a_time = time.time()
+    a_time = time.time() - 10*60
     host_list = []
     trace_dict = defaultdict(list)
     previous_result = []
@@ -576,7 +578,7 @@ def main():
     worker.setDaemon(True)
     worker.start()
         
-    print('Running under Version 4 of consumer.py update 8:10pm sunday')
+    print('Running under Version 4 of consumer.py update 10:30pm sunday')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
