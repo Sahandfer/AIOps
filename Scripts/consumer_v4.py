@@ -125,7 +125,7 @@ class RCA():
 
         self.anomaly_chart = pd.DataFrame()
         for (a, b), value in grouped_df:
-            failure = sum(value['success'] == False)*3
+            failure = sum(value['success'] == False)*5
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['elapsedTime'].mean().reset_index()
             result = self.esd_test(value['elapsedTime'].to_numpy(), alpha=alpha, ub=ub, hybrid=False)
