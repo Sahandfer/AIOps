@@ -178,7 +178,7 @@ class RCA():
         for i in range(len(self.dockers)):
             self.docker_lookup_table[self.dockers[i]] = self.docker_hosts[i % 4]
 
-    def find_anomalous_hosts(self, min_threshold=10):
+    def find_anomalous_hosts(self, min_threshold=15):
         '''
         Find Any Anomalous Hosts
         Searches the anomaly chart for the hosts most likely to be causing the anomaly.
@@ -512,7 +512,7 @@ def rcaprocess():
         print('Processing + RCA finished in ' + colored('%f', 'cyan') % 
             (time.time() - st) + ' seconds.')
 
-        sleeping_time = 45 - (time.time() - st)
+        sleeping_time = 30 - (time.time() - st)
         print('RCA just ran, sleeping for %d seconds' % sleeping_time)
         if sleeping_time > 0:
             time.sleep(sleeping_time)
