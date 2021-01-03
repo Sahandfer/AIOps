@@ -420,12 +420,11 @@ def detection(timestamp):
 
     print('Anomaly Detection Done.')
     if results_to_send_off is None:
-        previous_result = None
         return False
     
     if sorted(previous_result) == sorted(results_to_send_off):
         submit(results_to_send_off)
-        previous_result = None
+        previous_result = []
         return True
     else:
         previous_result = results_to_send_off
@@ -554,7 +553,7 @@ trace_df = pd.DataFrame(columns=['callType', 'startTime', 'elapsedTime', 'succes
 a_time = 0.0
 host_list = []
 trace_dict = defaultdict(list)
-previous_result = None
+previous_result = []
 
 
 def main():
@@ -571,13 +570,13 @@ def main():
     a_time = time.time()
     host_list = []
     trace_dict = defaultdict(list)
-    previous_result = None
+    previous_result = []
 
     worker = Thread(target=rcaprocess)
     worker.setDaemon(True)
     worker.start()
         
-    print('Running under Version 4 of consumer.py update 8pm sunday')
+    print('Running under Version 4 of consumer.py update 8:10pm sunday')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
