@@ -133,7 +133,13 @@ class RCA():
             value = value.groupby(['time_group'])['elapsedTime'].mean().reset_index()
             value = value['elapsedTime'].to_numpy()
             value = value[1:]
-            result = self.esd_test(value, alpha=alpha, ub=ub, hybrid=False)
+            result = 0
+            try: 
+                result = self.esd_test(value, alpha=alpha, ub=ub, hybrid=False)
+            except: 
+                print('For some reason we got an error in esd_test. The list of values passed to esd_test was:')
+                print(value)
+                result = 0
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
