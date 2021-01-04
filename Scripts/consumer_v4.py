@@ -585,7 +585,7 @@ def main():
     worker.setDaemon(True)
     worker.start()
         
-    print('Running under Version 4 of consumer.py update 11:10am Monday')
+    print('Running under Version 4 of consumer.py update 06:43am Tuesday')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
