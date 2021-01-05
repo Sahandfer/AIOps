@@ -2,40 +2,37 @@
 
 > This is the group project for ANM2020.
 
-## Guide
-
 ### Running Scripts in Tencent Cloud
-- Make sure python scipt has the following at the beginning
-   ```
+- Make sure python script has the following at the beginning
+   ```shell
    #!/usr/bin/env python3
    ```
 - Give it permission
-   ```
+   ```shell
    chmod +x consumer.py
    ```
 - Run it using:
-   ```
+   ```shell
    nohup python -u ./consumer.py > [output file name].log &
    ```
 
-### Viewing the output
-   ```
-   cat [output file name].log
-   ```
+- View the output log:
 
-### To end the process
-   ```
-   ps ax | grep consumer.py
-   kill PID
-   ```
+     ```shell
+  cat [output file name].log
+     ```
+
+- Kill the process:
+
+     ```shell
+  ps ax | grep consumer.py
+  kill PID
+     ```
 
 ### Scripts
+
 - consumer.py --- script to submit our answers
 - concat.py --- script to make a single file for all data
-
-### Main program
-- main.py --- main python file that we can use for our submission
-- main.ipynb --- notebook to finish different parts of the task efficiently
 
 ## Problem statement
 
