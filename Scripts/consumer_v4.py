@@ -128,11 +128,18 @@ class RCA():
             failure = 0
             if 'db' in b:
                 failure = sum(value['success']==False)*5
+            value['startTime'] = value['startTime'].iloc[-1] - value['startTime']
             value['time_group'] = value.startTime//self.division_milliseconds
             value = value.groupby(['time_group'])['elapsedTime'].mean().reset_index()
             value = value['elapsedTime'].to_numpy()
-            value = value[:-1]
-            result = self.esd_test(value, alpha=alpha, ub=ub, hybrid=False)
+            value = value[1:]
+            result = 0
+            try: 
+                result = self.esd_test(value, alpha=alpha, ub=ub, hybrid=False)
+            except: 
+                print('For some reason we got an error in esd_test. The list of values passed to esd_test was:')
+                print(value)
+                result = 0
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
@@ -578,7 +585,7 @@ def main():
     worker.setDaemon(True)
     worker.start()
         
-    print('Running under Version 4 of consumer.py update 10:30pm sunday')
+    print('Running under Version 4 of consumer.py update 06:43am Tuesday')
     print('Started receiving data! Fingers crossed...')
     for message in CONSUMER:
         data = json.loads(message.value.decode('utf8'))
@@ -628,7 +635,6 @@ if __name__ == '__main__':
     # trace_dict_2 = defaultdict(list)
 
     # for index, row in trace_df.iterrows():
-    #     trace_dict_2[row['traceId']] = trace_dict_2.get(row['traceId'], [])
     #     trace_dict_2[row['traceId']].append(row.to_dict())
 
     # print('done for loop in %f' % (time.time() - asdfasdfasdf))
