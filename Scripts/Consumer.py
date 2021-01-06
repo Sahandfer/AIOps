@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 
 '''
-Example for RCAing like a B0$$
+Project for Advanced Network management 2020 Assignment 3: Group Project
+Created By: Henry Zheng, Sahand Sabour, Samuel Pegg
 '''
 import requests
 import json
@@ -143,6 +144,8 @@ class RCA():
             self.anomaly_chart.loc[b, a] = result + failure
 
         self.anomaly_chart = self.anomaly_chart.sort_index()
+
+        # Draw the topology graph
         # print(self.anomaly_chart)
 
         # import networkx as nx
@@ -484,11 +487,6 @@ def rcaprocess():
     takes new data then add it into database, remove data more than 20 mins
     this function also calls the anomaly detection function to run anomaly detection
     Wont run detection if last anomalous is within 10 mins
-
-    # IMPORTANT FIXME start detection after 20 mins of starting
-
-    # FIXME get rid dataframe, we can make a dictionary like 
-        # { (cmdb_id, serviceName): [List of 20 elements (each element contains 1 min of data)]}
 
     lock: Thread lock prevent different threads accessing data at the same time
 
