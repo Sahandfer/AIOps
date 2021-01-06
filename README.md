@@ -1,38 +1,45 @@
-# Anomaly detection
+# AIOps 2020
 
-> This is the group project for ANM2020.
+This is our group project for Advanced Network Management 2020 final project.
+
+## Repository Guide
+
+> This repository is for the final project of *The Anomalies*
+
+### Directory 
+
+- `Docs/` Documentation for this project. Includes the project specification as well as our presentation and final report.
+- `Legacy` All of our previous prototypes and pre-trained models.
+- `Processing`  The notebooks we created for processing data of different KPI resources.
+- `Scripts`  The main and test scripts.
 
 ### Running Scripts in Tencent Cloud
+
 - Make sure python script has the following at the beginning
    ```shell
    #!/usr/bin/env python3
    ```
 - Give it permission
    ```shell
-   chmod +x consumer.py
+   chmod +x Consumer.py
    ```
 - Run it using:
    ```shell
-   nohup python -u ./consumer.py > [output file name].log &
+   nohup python -u ./Consumer.py > [output file name].log &
    ```
 
 - View the output log:
 
      ```shell
   cat [output file name].log
-     ```
+  ```
 
 - Kill the process:
 
      ```shell
-  ps ax | grep consumer.py
+  ps ax | grep Consumer.py
   kill PID
-     ```
-
-### Scripts
-
-- consumer.py --- script to submit our answers
-- concat.py --- script to make a single file for all data
+  ```
 
 ## Problem statement
 
